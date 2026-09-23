@@ -48,6 +48,7 @@ Run locally with:  pip install pygame-ce   then   python letter_rise_demo_v2.py
 import os
 import random
 import sys
+import math
 import pygame
 import pandas as pd
 
@@ -70,11 +71,15 @@ SPAWN_Y = 20                 # falling letters spawn just below the top edge
 MAX_FALLING = 15
 SPAWN_INTERVAL_MS = 1000
 FALL_SPEED = 40.0            # px / second, eased down as stack rises (see update)
+FALLING_RADIUS = CELL // 2 - 6
+FALLING_DIAMETER = FALLING_RADIUS * 2
+DELETION_ZONE_HEIGHT = FALLING_DIAMETER
 
 ROW_GROWTH_INTERVAL_MS = 17_500 
 GRACE_PERIOD_MS = 10_000
 ROW_HOLD_MS = 300
 ROW_FLICKER_MS = 200
+SCORE_POPUP_MS = 900
 
 BANK_SLOTS = 6
 BANK_Y = 740
@@ -104,6 +109,7 @@ S_DRAG_COLOR = (255, 180, 90)
 GRACE_COLOR = (220, 90, 90)
 ROW_INVALID_COLOR = (170, 55, 55)
 ROW_FLICKER_COLOR = (245, 220, 110)
+SCORE_POPUP_COLOR = (255, 235, 135)
 
 # Dataset from wordle_referenced.csv (5-letter words only, lowercase, no punctuation)
 DATASET = pd.read_csv("wordle_referenced.csv", index_col=0)
@@ -174,6 +180,14 @@ class FallingLetter:
         self.origin_bank_index = None
 
 
+class ScorePopup:
+    def __init__(self, points, x, y, created_at):
+        self.points = points
+        self.x = x
+        self.y = y
+        self.created_at = created_at
+
+
 class Board:
     def __init__(self):
         self.rows = [Row()]  # start with one open row at the bottom
@@ -185,6 +199,7 @@ class Board:
         self.grace_active = False
         self.grace_end = 0
         self.game_over = False
+        self.score_popups = []
 
     # -- geometry -----------------------------------------------------
 
@@ -195,6 +210,12 @@ class Board:
     def stack_top_y(self):
         """Top edge y-coordinate of the whole stack (smallest y = highest row)."""
         return self.row_top_y(len(self.rows) - 1)
+
+    def danger_level(self):
+        """Return how close the stack is to the danger line, from 0 to 1."""
+        safe_height = BOARD_BOTTOM_Y - BUFFER_LINE_Y
+        stack_height = BOARD_BOTTOM_Y - self.stack_top_y()
+        return max(0.0, min(1.0, stack_height / safe_height))
 
     def cell_rect(self, row_idx, col):
         x = BOARD_LEFT + col * (CELL + CELL_GAP)
@@ -222,6 +243,36 @@ class Board:
         x = random.randint(CELL // 2, SCREEN_W - CELL // 2)
         self.falling.append(FallingLetter(random_letter(), x, SPAWN_Y))
 
+    def separate_falling_letters(self):
+        for _ in range(12):
+            for index, first in enumerate(self.falling):
+                for second in self.falling[index + 1:]:
+                    dx = second.x - first.x
+                    dy = second.y - first.y
+                    distance = math.hypot(dx, dy)
+                    if distance >= FALLING_DIAMETER:
+                        continue
+
+                    if distance == 0:
+                        push_x, push_y = FALLING_DIAMETER, 0.0
+                    else:
+                        push_x = dx / distance * (FALLING_DIAMETER - distance)
+                        push_y = dy / distance * (FALLING_DIAMETER - distance)
+                    if first.dragging:
+                        second.x += push_x
+                        second.y += push_y
+                    elif second.dragging:
+                        first.x -= push_x
+                        first.y -= push_y
+                    else:
+                        first.x -= push_x / 2
+                        first.y -= push_y / 2
+                        second.x += push_x / 2
+                        second.y += push_y / 2
+
+                    first.x = max(FALLING_RADIUS, min(SCREEN_W - FALLING_RADIUS, first.x))
+                    second.x = max(FALLING_RADIUS, min(SCREEN_W - FALLING_RADIUS, second.x))
+
     # -- per-frame update -------------------------------------------------
 
     def update(self, dt, now):
@@ -231,6 +282,10 @@ class Board:
         self.maybe_grow(now)
         self.maybe_spawn(now)
         self.update_row_resolutions(now)
+        self.score_popups = [
+            popup for popup in self.score_popups
+            if now - popup.created_at < SCORE_POPUP_MS
+        ]
 
         # Ease fall speed down slightly as the stack rises, so total pressure
         # doesn't compound (board getting smaller already raises difficulty).
@@ -244,10 +299,11 @@ class Board:
                 still_falling.append(fl)
                 continue
             fl.y += speed * dt
-            if fl.y >= top_y - 4 or fl.y >= SCREEN_H:
+            if fl.y >= top_y - 4 + DELETION_ZONE_HEIGHT or fl.y >= SCREEN_H:
                 continue  # vanished — touched the stack, or hit the floor
             still_falling.append(fl)
         self.falling = still_falling
+        self.separate_falling_letters()
 
         # Grace period handling
         in_danger = top_y <= BUFFER_LINE_Y
@@ -281,7 +337,15 @@ class Board:
         row.resolution_until = 0
         if word in WORD_SET:
             point = POINT_LIST[WORD_LIST.index(word)]
-            self.score += round(point * 100)
+            points = round(point * 100)
+            self.score += points
+            row_index = self.rows.index(row)
+            self.score_popups.append(ScorePopup(
+                points,
+                BOARD_LEFT + (ROW_LEN * CELL + (ROW_LEN - 1) * CELL_GAP) / 2,
+                self.row_top_y(row_index) + CELL / 2,
+                now,
+            ))
             row.cells = [None] * ROW_LEN
             row.hole_cols.clear()
             self.on_row_cleared(now)
@@ -463,31 +527,20 @@ class Game:
         self.screen.fill(BG)
         board = self.board
 
+        # Tint the playfield more strongly red as the stack climbs toward the
+        # danger line, giving pressure a constant visual presence.
+        danger_level = board.danger_level()
+        if danger_level > 0:
+            danger_overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            danger_overlay.fill((190, 25, 25, round(125 * danger_level)))
+            self.screen.blit(danger_overlay, (0, 0))
+
+        # The stack consumes falling letters at its highest top edge. Draw the
+        # moving boundary line here; the masking gradient is drawn after the
+        # falling letters so they disappear naturally behind it.
+        disappear_y = board.stack_top_y() - 4
         # danger / buffer line
         pygame.draw.line(self.screen, DANGER_LINE_COLOR, (0, BUFFER_LINE_Y), (SCREEN_W, BUFFER_LINE_Y), 2)
-
-        # grid rows
-        for r_idx, row in enumerate(board.rows):
-            top_y = board.row_top_y(r_idx)
-            if top_y < -CELL:
-                continue
-            for c in range(ROW_LEN):
-                rect = board.cell_rect(r_idx, c)
-                if row.locked:
-                    color = ROW_INVALID_COLOR
-                elif row.resolution_phase == "flicker" and (pygame.time.get_ticks() // 50) % 2 == 0:
-                    color = ROW_FLICKER_COLOR
-                elif c in row.hole_cols:
-                    color = CELL_HOLE
-                elif row.cells[c] is not None:
-                    color = CELL_UNLOCKED_FILLED
-                else:
-                    color = CELL_EMPTY
-                pygame.draw.rect(self.screen, color, rect, border_radius=6)
-                pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
-                if row.cells[c] is not None:
-                    txt = self.font.render(row.cells[c].upper(), True, letter_color(row.cells[c]))
-                    self.screen.blit(txt, txt.get_rect(center=rect.center))
 
         # bank
         for i in range(BANK_SLOTS):
@@ -510,9 +563,71 @@ class Game:
         # falling letters
         for fl in board.falling:
             color = letter_color(fl.letter, fl.dragging)
-            pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), CELL // 2 - 6)
+            pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
             txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
             self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
+
+        deletion_zone = pygame.Rect(
+            0,
+            disappear_y,
+            SCREEN_W,
+            DELETION_ZONE_HEIGHT,
+        )
+        pygame.draw.rect(self.screen, BG, deletion_zone)
+
+        gradient = pygame.Surface((SCREEN_W, DELETION_ZONE_HEIGHT), pygame.SRCALPHA)
+        for y in range(DELETION_ZONE_HEIGHT):
+            distance = (y + 1) / DELETION_ZONE_HEIGHT
+            alpha = round(105 * (1 - distance) ** 2)
+            pygame.draw.line(
+                gradient,
+                (220, 45, 45, alpha),
+                (0, y),
+                (SCREEN_W, y),
+            )
+        self.screen.blit(gradient, (0, disappear_y))
+
+        pygame.draw.line(
+            self.screen,
+            (245, 75, 75, 180),
+            (0, disappear_y),
+            (SCREEN_W, disappear_y),
+            2,
+        )
+
+        # Draw the grid last so its cells and letters stay visible above the
+        # disappearance line and its masking gradient.
+        for r_idx, row in enumerate(board.rows):
+            top_y = board.row_top_y(r_idx)
+            if top_y < -CELL:
+                continue
+            for c in range(ROW_LEN):
+                rect = board.cell_rect(r_idx, c)
+                if row.locked:
+                    color = ROW_INVALID_COLOR
+                elif row.resolution_phase == "flicker" and (pygame.time.get_ticks() // 50) % 2 == 0:
+                    color = ROW_FLICKER_COLOR
+                elif c in row.hole_cols:
+                    color = CELL_HOLE
+                elif row.cells[c] is not None:
+                    color = CELL_UNLOCKED_FILLED
+                else:
+                    color = CELL_EMPTY
+                pygame.draw.rect(self.screen, color, rect, border_radius=6)
+                pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
+                if row.cells[c] is not None:
+                    txt = self.font.render(row.cells[c].upper(), True, letter_color(row.cells[c]))
+                    self.screen.blit(txt, txt.get_rect(center=rect.center))
+
+        # Completed rows launch their score briefly upward before fading out.
+        now = pygame.time.get_ticks()
+        for popup in board.score_popups:
+            progress = (now - popup.created_at) / SCORE_POPUP_MS
+            popup_y = popup.y - 42 * progress
+            popup_alpha = round(255 * (1 - progress))
+            popup_txt = self.font.render(f"+ {popup.points}!", True, SCORE_POPUP_COLOR)
+            popup_txt.set_alpha(popup_alpha)
+            self.screen.blit(popup_txt, popup_txt.get_rect(center=(round(popup.x), round(popup_y))))
 
         # HUD
         score_txt = self.font.render(f"Score: {board.score}", True, TEXT_COLOR)
