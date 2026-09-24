@@ -292,7 +292,7 @@ class Board:
                 still_falling.append(fl)
                 continue
             fl.y += speed * dt
-            if fl.y >= top_y - 4 + DELETION_ZONE_HEIGHT or fl.y >= SCREEN_H:
+            if fl.y >= top_y - 4 + FALLING_DIAMETER or fl.y >= SCREEN_H:
                 continue  # vanished — touched the stack, or hit the floor
             still_falling.append(fl)
         self.falling = still_falling
