@@ -330,7 +330,7 @@ class Board:
         row.resolution_until = 0
         if word in WORD_SET:
             point = POINT_LIST[WORD_LIST.index(word)]
-            points = round(point * 100)
+            points = round(((1 - point) * 100) + 100)
             self.score += points
             row_index = self.rows.index(row)
             self.score_popups.append(ScorePopup(
@@ -512,8 +512,30 @@ class Game:
         # falling letters so they disappear naturally behind it.
         disappear_y = board.stack_top_y() - 4
 
+        # Cover the area below the gradient before drawing UI elements so the
+        # bank and grid remain visible on top of it.
+        under_gradient_y = disappear_y + DELETION_ZONE_HEIGHT
+        if under_gradient_y < SCREEN_H:
+            pygame.draw.rect(
+                self.screen,
+                BG,
+                pygame.Rect(0, under_gradient_y, SCREEN_W, SCREEN_H - under_gradient_y),
+            )
+
         # danger / buffer line
         pygame.draw.line(self.screen, DANGER_LINE_COLOR, (0, BUFFER_LINE_Y), (SCREEN_W, BUFFER_LINE_Y), 2)
+
+        # bank
+        for i in range(BANK_SLOTS):
+            rect = board.bank_rect(i)
+            pygame.draw.rect(self.screen, BANK_COLOR, rect, border_radius=6)
+            pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
+            if board.bank[i] is not None:
+                txt = self.font.render(board.bank[i].upper(), True, letter_color(board.bank[i]))
+                self.screen.blit(txt, txt.get_rect(center=rect.center))
+        bank_label = self.small_font.render("BANK", True, TEXT_COLOR)
+        self.screen.blit(bank_label, (BANK_LEFT, BANK_Y - 22))
+        self.screen.blit(bank_label, (BANK_RIGHT, BANK_Y - 22))
 
         # Draw ungrabbed letters before the deletion mask so they disappear
         # behind the stack boundary as they pass under it.
@@ -545,16 +567,6 @@ class Game:
             )
         self.screen.blit(gradient, (0, disappear_y))
 
-        # Draw this after falling letters so none can show through below the
-        # gradient. UI elements are rendered afterward and remain visible.
-        under_gradient_y = disappear_y + DELETION_ZONE_HEIGHT
-        if under_gradient_y < SCREEN_H:
-            pygame.draw.rect(
-                self.screen,
-                BG,
-                pygame.Rect(0, under_gradient_y, SCREEN_W, SCREEN_H - under_gradient_y),
-            )
-
         pygame.draw.line(
             self.screen,
             (245, 75, 75, 180),
@@ -562,18 +574,6 @@ class Game:
             (SCREEN_W, disappear_y),
             2,
         )
-
-        # bank
-        for i in range(BANK_SLOTS):
-            rect = board.bank_rect(i)
-            pygame.draw.rect(self.screen, BANK_COLOR, rect, border_radius=6)
-            pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
-            if board.bank[i] is not None:
-                txt = self.font.render(board.bank[i].upper(), True, letter_color(board.bank[i]))
-                self.screen.blit(txt, txt.get_rect(center=rect.center))
-        bank_label = self.small_font.render("BANK", True, TEXT_COLOR)
-        self.screen.blit(bank_label, (BANK_LEFT, BANK_Y - 22))
-        self.screen.blit(bank_label, (BANK_RIGHT, BANK_Y - 22))
 
         # Draw the grid last so its cells and letters stay visible above the
         # disappearance line and its masking gradient.
