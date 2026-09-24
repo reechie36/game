@@ -15,15 +15,13 @@ Implements the v2 design decisions worked out in planning:
   VANISHES (it doesn't count as a miss against you directly, but you
   lose the letter and the chance to use it).
 - Interaction is CLICK-AND-DRAG:
-    * Drag a falling letter and drop it into any empty grid cell in any
-      unlocked row, or into an empty bank slot.
+        * Drag a falling letter and drop it into any empty grid cell in any
+            unlocked row.
     * Drag a falling letter onto an OCCUPIED grid cell to REPLACE the
       letter there. The evicted letter resumes falling from that spot.
     * Drag a letter already placed in the grid to pick it back up and
       move it. If you drop it somewhere invalid, it resumes falling
       from wherever you dropped it (never just disappears).
-    * Dragging a letter OUT of the bank into the grid is one-way —
-      once it leaves the bank it can never go back in.
 - Row fills with a valid word -> clears, scores points, resets to
   empty (stays in place — the stack does not shrink from clearing).
 - Row fills with an invalid word -> LOCKS (grayed out, no longer
@@ -77,12 +75,6 @@ ROW_HOLD_MS = 300
 ROW_FLICKER_MS = 200
 SCORE_POPUP_MS = 900
 
-BANK_SLOTS = 6
-BANK_Y = 740
-BANK_GROUP_SLOTS = 3
-BANK_LEFT = 30
-BANK_RIGHT = SCREEN_W - 30 - (BANK_GROUP_SLOTS * CELL + (BANK_GROUP_SLOTS - 1) * CELL_GAP)
-
 # Colors
 BG = (18, 18, 24)
 GRID_LINE = (60, 60, 72)
@@ -92,7 +84,6 @@ CELL_LOCKED = (70, 70, 76)
 CELL_HOLE = (90, 40, 40)          # freshly vacated by discard/replace — visually distinct
 TEXT_COLOR = (235, 235, 240)
 DANGER_LINE_COLOR = (200, 60, 60)
-BANK_COLOR = (45, 45, 58)
 FALLING_COLOR = (230, 190, 90)
 FALLING_DRAG_COLOR = (255, 220, 130)
 VOWEL_COLOR = (70, 145, 235)
@@ -165,12 +156,9 @@ class FallingLetter:
         self.x = x
         self.y = y
         self.dragging = False
-        # origin tells us what happens on an invalid drop:
-        #   "fall"  -> just keeps falling from the release point
-        #   "grid"  -> resumes falling from the release point (picked up from board)
-        #   "bank"  -> snaps back into its bank slot
+        # origin tells us what happens when a placed letter is dropped outside
+        # a grid cell.
         self.origin = "fall"
-        self.origin_bank_index = None
 
 
 class ScorePopup:
@@ -185,7 +173,6 @@ class Board:
     def __init__(self):
         self.rows = [Row()]  # start with one open row at the bottom
         self.falling = []
-        self.bank = [None] * BANK_SLOTS
         self.score = 0
         self.last_spawn = 0
         self.last_growth = pygame.time.get_ticks()
@@ -214,11 +201,6 @@ class Board:
         x = BOARD_LEFT + col * (CELL + CELL_GAP)
         y = self.row_top_y(row_idx)
         return pygame.Rect(x, y, CELL, CELL)
-
-    def bank_rect(self, i):
-        group_index = i if i < BANK_GROUP_SLOTS else i - BANK_GROUP_SLOTS
-        group_left = BANK_LEFT if i < BANK_GROUP_SLOTS else BANK_RIGHT
-        return pygame.Rect(group_left + group_index * (CELL + CELL_GAP), BANK_Y, CELL, CELL)
 
     # -- growth / spawning ---------------------------------------------
 
@@ -390,12 +372,6 @@ class Game:
                     return r_idx, c
         return None
 
-    def find_bank_slot_at(self, pos):
-        for i in range(BANK_SLOTS):
-            if self.board.bank_rect(i).collidepoint(pos):
-                return i
-        return None
-
     # -- mouse handling ----------------------------------------------------
 
     def handle_mousedown(self, pos):
@@ -407,18 +383,6 @@ class Game:
             fl.dragging = True
             fl.origin = "fall"
             self.dragging = fl
-            return
-
-        slot = self.find_bank_slot_at(pos)
-        if slot is not None and self.board.bank[slot] is not None:
-            letter = self.board.bank[slot]
-            self.board.bank[slot] = None
-            fl = FallingLetter(letter, pos[0], pos[1])
-            fl.dragging = True
-            fl.origin = "bank"
-            fl.origin_bank_index = slot
-            self.dragging = fl
-            self.board.falling.append(fl)
             return
 
         cell = self.find_grid_cell_at(pos)
@@ -446,14 +410,6 @@ class Game:
         if fl is None:
             return
         now = pygame.time.get_ticks()
-
-        # Bank slot
-        slot = self.find_bank_slot_at(pos)
-        if slot is not None and self.board.bank[slot] is None and fl.origin != "bank":
-            self.board.bank[slot] = fl.letter
-            if fl in self.board.falling:
-                self.board.falling.remove(fl)
-            return
 
         # Grid cell
         cell = self.find_grid_cell_at(pos)
@@ -483,13 +439,8 @@ class Game:
                 # occupied + origin == "grid": no-op, falls through to invalid-drop handling
 
         # Invalid drop location
-        if fl.origin == "bank":
-            self.board.bank[fl.origin_bank_index] = fl.letter
-            if fl in self.board.falling:
-                self.board.falling.remove(fl)
-        else:
-            # "fall" or "grid" origin: just resumes falling from release point
-            fl.x, fl.y = pos
+        # Resume falling from the release point.
+        fl.x, fl.y = pos
         # dragging flag cleared implicitly since fl.dragging isn't checked elsewhere
         fl.dragging = False
 
@@ -619,18 +570,6 @@ class Game:
             popup_txt.set_alpha(popup_alpha)
             self.screen.blit(popup_txt, popup_txt.get_rect(center=(round(popup.x), round(popup_y))))
 
-        # HUD
-        score_txt = self.font.render(f"Score: {board.score}", True, TEXT_COLOR)
-        self.screen.blit(score_txt, (16, 16))
-
-        if board.grace_active and not board.game_over:
-            remaining = max(0, board.grace_end - pygame.time.get_ticks()) / 1000.0
-            g_txt = self.font.render(f"DANGER! {remaining:0.1f}s", True, GRACE_COLOR)
-            self.screen.blit(g_txt, g_txt.get_rect(midtop=(SCREEN_W // 2, 16)))
-
-        if board.game_over:
-            overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 170))
             self.screen.blit(overlay, (0, 0))
             go_txt = self.big_font.render("GAME OVER", True, (240, 90, 90))
             self.screen.blit(go_txt, go_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 30)))

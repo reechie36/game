@@ -47,7 +47,7 @@ Rows are five letters wide. When a row is full:
 
 | Input | Action |
 | --- | --- |
-| Left mouse button | Click and drag letters, bank items, and grid items |
+| Left mouse button | Click and drag falling and grid letters |
 | `R` | Restart after Game Over |
 | `Esc` | Quit the game |
 | Window close | Quit the game |
@@ -62,14 +62,13 @@ The main game renderer draws the scene in this order, from back to front:
 4. Deletion mask and red fade gradient
 5. Solid cover below the gradient
 6. Stack boundary line
-7. Bank slots and bank labels
-8. Grid cells and placed letters
-9. The currently dragged letter
-10. Score popups
-11. Score, danger timer, and game-over HUD
+7. Grid cells and placed letters
+8. The currently dragged letter
+9. Score popups
+10. Score, danger timer, and game-over HUD
 
 The cover hides falling letters after they pass through the gradient, while
-the bank, grid, and other UI are rendered afterward so they remain visible.
+the grid and other UI are rendered afterward so they remain visible.
 The dragged letter is rendered near the end so it stays visible over every
 playfield layer during dragging.
 
@@ -158,14 +157,12 @@ CLASS FallingLetter:
 		store the letter and screen position
 		dragging = false
 		origin = "fall"
-		origin_bank_index = none
 ```
 
 `origin` determines what happens when a dragged letter is released in an invalid location:
 
 - `fall`: continue falling from the release position.
 - `grid`: continue falling after being picked up from the board.
-- `bank`: return to the original bank slot.
 
 ### Board setup and geometry
 
@@ -173,7 +170,6 @@ CLASS FallingLetter:
 FUNCTION Board.initialize:
 	rows = one new unlocked Row
 	falling = an empty list
-	bank = ten empty slots
 	score = 0
 	last_spawn = 0
 	last_growth = current pygame time
@@ -192,9 +188,6 @@ FUNCTION cell_rect(row_index, column):
 	calculate the cell's x and y position from the board layout
 	return a rectangle covering that cell
 
-FUNCTION bank_rect(slot_index):
-	calculate the bank slot's x and y position
-	return a rectangle covering that slot
 ```
 
 ### Board growth and letter spawning
@@ -302,11 +295,6 @@ FUNCTION find_grid_cell_at(mouse_position):
 			return row index and column index
 	return none
 
-FUNCTION find_bank_slot_at(mouse_position):
-	FOR each bank slot:
-		IF the slot rectangle contains the mouse:
-			return slot index
-	return none
 ```
 
 ### Mouse-down and mouse-move handling
@@ -319,14 +307,6 @@ FUNCTION handle_mousedown(mouse_position):
 	IF a falling letter is under the mouse:
 		mark it as dragging
 		set its origin to "fall"
-		store it as the active dragged letter
-		stop
-
-	IF a filled bank slot is under the mouse:
-		remove its letter from the bank
-		create a dragging FallingLetter at the mouse position
-		set origin to "bank" and remember the bank slot index
-		add it to falling
 		store it as the active dragged letter
 		stop
 
@@ -354,12 +334,6 @@ FUNCTION handle_mouseup(mouse_position):
 	IF no dragged letter exists:
 		stop
 
-	slot = find_bank_slot_at(mouse_position)
-	IF slot is empty AND dragged did not come from the bank:
-		put dragged.letter into the bank slot
-		remove dragged from falling
-		stop
-
 	cell = find_grid_cell_at(mouse_position)
 	IF cell exists AND its row is unlocked:
 		IF the cell is empty:
@@ -376,11 +350,7 @@ FUNCTION handle_mouseup(mouse_position):
 			check the row for a valid word
 			stop
 
-	IF dragged.origin is "bank":
-		return its letter to its original bank slot
-		remove dragged from falling
-	ELSE:
-		place it at the release position and let it resume falling
+	place it at the release position and let it resume falling
 
 	mark dragged as no longer being dragged
 ```
@@ -407,7 +377,6 @@ FUNCTION draw:
 		choose a color based on locked, hole, filled, or empty state
 		draw the cell and its letter if present
 
-	draw all bank slots and stored letters
 	draw falling letters
 	draw the current score
 
