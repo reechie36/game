@@ -22,16 +22,12 @@ Implements the v2 design decisions worked out in planning:
     * Drag a letter already placed in the grid to pick it back up and
       move it. If you drop it somewhere invalid, it resumes falling
       from wherever you dropped it (never just disappears).
-    * Drag a placed letter onto the trash-can icon to DISCARD it
-      permanently. The letter directly above it in the same column
-      (if that row is unlocked) drops down one row to fill the gap;
-      no further cascade. Discard never reaches through a locked row.
     * Dragging a letter OUT of the bank into the grid is one-way —
       once it leaves the bank it can never go back in.
 - Row fills with a valid word -> clears, scores points, resets to
   empty (stays in place — the stack does not shrink from clearing).
 - Row fills with an invalid word -> LOCKS (grayed out, no longer
-  usable — including immune to discard-shift from below).
+    usable — including immune to shifts from below).
 - If the stack reaches the top of the play area, you don't lose
   immediately: a RECURRING grace period starts. Clearing any row
   while in the grace period resets the timer. Let it expire -> Game
@@ -73,7 +69,7 @@ SPAWN_INTERVAL_MS = 1000
 FALL_SPEED = 40.0            # px / second, eased down as stack rises (see update)
 FALLING_RADIUS = CELL // 2 - 6
 FALLING_DIAMETER = FALLING_RADIUS * 2
-DELETION_ZONE_HEIGHT = FALLING_DIAMETER
+DELETION_ZONE_HEIGHT = CELL * 2
 
 ROW_GROWTH_INTERVAL_MS = 17_500 
 GRACE_PERIOD_MS = 10_000
@@ -87,8 +83,6 @@ BANK_GROUP_SLOTS = 3
 BANK_LEFT = 30
 BANK_RIGHT = SCREEN_W - 30 - (BANK_GROUP_SLOTS * CELL + (BANK_GROUP_SLOTS - 1) * CELL_GAP)
 
-TRASH_RECT = pygame.Rect(SCREEN_W - 70, BANK_Y - 90, 50, 50)
-
 # Colors
 BG = (18, 18, 24)
 GRID_LINE = (60, 60, 72)
@@ -99,7 +93,6 @@ CELL_HOLE = (90, 40, 40)          # freshly vacated by discard/replace — visua
 TEXT_COLOR = (235, 235, 240)
 DANGER_LINE_COLOR = (200, 60, 60)
 BANK_COLOR = (45, 45, 58)
-TRASH_COLOR = (120, 50, 50)
 FALLING_COLOR = (230, 190, 90)
 FALLING_DRAG_COLOR = (255, 220, 130)
 VOWEL_COLOR = (70, 145, 235)
@@ -403,21 +396,6 @@ class Game:
                 return i
         return None
 
-    # -- discard / column shift -----------------------------------------
-
-    def discard_at(self, row_idx, col):
-        rows = self.board.rows
-        rows[row_idx].cells[col] = None
-        rows[row_idx].hole_cols.discard(col)
-        above = row_idx + 1
-        if above < len(rows) and not rows[above].locked and rows[above].resolution_phase is None:
-            letter = rows[above].cells[col]
-            if letter is not None:
-                rows[row_idx].cells[col] = letter
-                rows[above].cells[col] = None
-                rows[above].hole_cols.add(col)  # freshly vacated — visually distinct
-        self.board.try_clear_row(row_idx, pygame.time.get_ticks())
-
     # -- mouse handling ----------------------------------------------------
 
     def handle_mousedown(self, pos):
@@ -468,12 +446,6 @@ class Game:
         if fl is None:
             return
         now = pygame.time.get_ticks()
-
-        # Trash can — discard (only meaningful for a letter that came off the grid)
-        if TRASH_RECT.collidepoint(pos) and fl.origin == "grid":
-            if fl in self.board.falling:
-                self.board.falling.remove(fl)
-            return
 
         # Bank slot
         slot = self.find_bank_slot_at(pos)
@@ -539,29 +511,15 @@ class Game:
         # moving boundary line here; the masking gradient is drawn after the
         # falling letters so they disappear naturally behind it.
         disappear_y = board.stack_top_y() - 4
+
         # danger / buffer line
         pygame.draw.line(self.screen, DANGER_LINE_COLOR, (0, BUFFER_LINE_Y), (SCREEN_W, BUFFER_LINE_Y), 2)
 
-        # bank
-        for i in range(BANK_SLOTS):
-            rect = board.bank_rect(i)
-            pygame.draw.rect(self.screen, BANK_COLOR, rect, border_radius=6)
-            pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
-            if board.bank[i] is not None:
-                txt = self.font.render(board.bank[i].upper(), True, letter_color(board.bank[i]))
-                self.screen.blit(txt, txt.get_rect(center=rect.center))
-        bank_label = self.small_font.render("BANK", True, TEXT_COLOR)
-        self.screen.blit(bank_label, (BANK_LEFT, BANK_Y - 22))
-        self.screen.blit(bank_label, (BANK_RIGHT, BANK_Y - 22))
-
-        # trash can
-        pygame.draw.rect(self.screen, TRASH_COLOR, TRASH_RECT, border_radius=6)
-        pygame.draw.rect(self.screen, GRID_LINE, TRASH_RECT, 2, border_radius=6)
-        tx = self.small_font.render("DEL", True, TEXT_COLOR)
-        self.screen.blit(tx, tx.get_rect(center=TRASH_RECT.center))
-
-        # falling letters
+        # Draw ungrabbed letters before the deletion mask so they disappear
+        # behind the stack boundary as they pass under it.
         for fl in board.falling:
+            if fl.dragging:
+                continue
             color = letter_color(fl.letter, fl.dragging)
             pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
             txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
@@ -587,6 +545,16 @@ class Game:
             )
         self.screen.blit(gradient, (0, disappear_y))
 
+        # Draw this after falling letters so none can show through below the
+        # gradient. UI elements are rendered afterward and remain visible.
+        under_gradient_y = disappear_y + DELETION_ZONE_HEIGHT
+        if under_gradient_y < SCREEN_H:
+            pygame.draw.rect(
+                self.screen,
+                BG,
+                pygame.Rect(0, under_gradient_y, SCREEN_W, SCREEN_H - under_gradient_y),
+            )
+
         pygame.draw.line(
             self.screen,
             (245, 75, 75, 180),
@@ -594,6 +562,18 @@ class Game:
             (SCREEN_W, disappear_y),
             2,
         )
+
+        # bank
+        for i in range(BANK_SLOTS):
+            rect = board.bank_rect(i)
+            pygame.draw.rect(self.screen, BANK_COLOR, rect, border_radius=6)
+            pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
+            if board.bank[i] is not None:
+                txt = self.font.render(board.bank[i].upper(), True, letter_color(board.bank[i]))
+                self.screen.blit(txt, txt.get_rect(center=rect.center))
+        bank_label = self.small_font.render("BANK", True, TEXT_COLOR)
+        self.screen.blit(bank_label, (BANK_LEFT, BANK_Y - 22))
+        self.screen.blit(bank_label, (BANK_RIGHT, BANK_Y - 22))
 
         # Draw the grid last so its cells and letters stay visible above the
         # disappearance line and its masking gradient.
@@ -618,6 +598,16 @@ class Game:
                 if row.cells[c] is not None:
                     txt = self.font.render(row.cells[c].upper(), True, letter_color(row.cells[c]))
                     self.screen.blit(txt, txt.get_rect(center=rect.center))
+
+        # Keep the letter being dragged above the boundary, grid, and every
+        # other board element so it remains visible throughout the drag.
+        for fl in board.falling:
+            if not fl.dragging:
+                continue
+            color = letter_color(fl.letter, dragging=True)
+            pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
+            txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
+            self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
 
         # Completed rows launch their score briefly upward before fading out.
         now = pygame.time.get_ticks()

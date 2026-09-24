@@ -52,6 +52,27 @@ Rows are five letters wide. When a row is full:
 | `Esc` | Quit the game |
 | Window close | Quit the game |
 
+## Render order
+
+The main game renderer draws the scene in this order, from back to front:
+
+1. Background and danger overlay
+2. Danger/buffer line
+3. Ungrabbed falling letters
+4. Deletion mask and red fade gradient
+5. Solid cover below the gradient
+6. Stack boundary line
+7. Bank slots and bank labels
+8. Grid cells and placed letters
+9. The currently dragged letter
+10. Score popups
+11. Score, danger timer, and game-over HUD
+
+The cover hides falling letters after they pass through the gradient, while
+the bank, grid, and other UI are rendered afterward so they remain visible.
+The dragged letter is rendered near the end so it stays visible over every
+playfield layer during dragging.
+
 ## Scoring
 
 Each valid word has a `points` value in the dataset. The game calculates the score as:
@@ -221,7 +242,7 @@ FUNCTION update(delta_time, current_time):
 		move the letter downward using speed * delta_time
 
 		IF the letter reaches the stack or the bottom of the screen:
-			discard it
+			remove it from play
 		ELSE:
 			keep it in new_falling_list
 
@@ -266,25 +287,6 @@ FUNCTION try_clear_row(row_index, current_time):
 	ELSE:
 		row.locked = true
 ```
-
-### Discarding and shifting letters
-
-```text
-FUNCTION discard_at(row_index, column):
-	set the selected cell to empty
-	remove its hole marker
-
-	above_index = row_index + 1
-	IF an above row exists AND it is not locked:
-		IF the above row has a letter in this column:
-			move that letter down into the selected cell
-			empty the above cell
-			mark the above cell as a visual hole
-
-	check whether the affected row can now be cleared
-```
-
-In the current interaction flow, dragging a grid letter to `DEL` removes that letter. The discard helper also supports the one-row downward shift described above.
 
 ### Finding objects under the mouse
 
@@ -352,10 +354,6 @@ FUNCTION handle_mouseup(mouse_position):
 	IF no dragged letter exists:
 		stop
 
-	IF mouse is over DEL AND dragged.origin is "grid":
-		remove dragged from falling
-		stop
-
 	slot = find_bank_slot_at(mouse_position)
 	IF slot is empty AND dragged did not come from the bank:
 		put dragged.letter into the bank slot
@@ -410,7 +408,6 @@ FUNCTION draw:
 		draw the cell and its letter if present
 
 	draw all bank slots and stored letters
-	draw the DEL button
 	draw falling letters
 	draw the current score
 
