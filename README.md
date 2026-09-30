@@ -97,7 +97,8 @@ sum(Scrabble letter points) * tier multiplier
 Tier multipliers are: tier 1 = 1.0, tier 2 = 1.2, tier 3 = 1.5, tier 4 = 2.0,
 tier 5 = 2.5, tier 6 = 3.0, tier 7 = 3.5, and tier 8 = 4.0.
 
-The score is shown in the top-left corner of the game window.
+The score is shown in the top-left corner of the game window with two decimal
+places.
 
 When a word is cleared, its popup first shows the base score and multiplier,
 such as `56 x1.2`. After 500 milliseconds, the popup changes to the final
@@ -106,6 +107,12 @@ multiplied score before fading out.
 A valid seven-letter word earns a BINGO bonus: the normal score is multiplied
 by 2. The popup shows the additional multiplier and displays `BINGO!` below
 the tier message.
+
+For a seven-letter word, the complete formula is:
+
+```text
+sum(Scrabble letter points) * tier multiplier * 2
+```
 
 A separate tier message appears below the bottom row, using these names:
 Common, Uncommon, Rare, Epic, Legendary, Mythic, Ancient, and Celestial for
@@ -204,6 +211,7 @@ CLASS Row:
 		cells = a list of seven empty values
 		hole_cols = an empty set used only for visual highlighting
 		locked_cols = an empty set
+		scored_cols = an empty set
 
 	FUNCTION is_full:
 		return true only when every value in cells is filled
@@ -473,6 +481,7 @@ FUNCTION run:
 			left mouse press -> handle_mousedown(position)
 			mouse movement -> handle_mousemove(position)
 			left mouse release -> handle_mouseup(position)
+			Space -> confirm_hovered_segment()
 
 		board.update(delta_time, current_time)
 		draw()
