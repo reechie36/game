@@ -87,14 +87,30 @@ TEXT_COLOR = (235, 235, 240)
 DANGER_LINE_COLOR = (200, 60, 60)
 FALLING_COLOR = (230, 190, 90)
 FALLING_DRAG_COLOR = (255, 220, 130)
-VOWEL_COLOR = (70, 145, 235)
-VOWEL_DRAG_COLOR = (120, 190, 255)
-S_COLOR = (235, 140, 55)
-S_DRAG_COLOR = (255, 180, 90)
 GRACE_COLOR = (220, 90, 90)
 ROW_INVALID_COLOR = (170, 55, 55)
 ROW_FLICKER_COLOR = (245, 220, 110)
 SCORE_POPUP_COLOR = (255, 235, 135)
+
+TIER_COLORS = {
+    1: (220, 55, 55),    # red
+    2: (235, 105, 45),   # red-orange
+    3: (235, 205, 45),   # yellow
+    4: (155, 195, 55),   # yellow-green
+    5: (70, 175, 80),    # green
+    6: (50, 150, 190),   # blue-green
+    7: (125, 80, 190),   # blue-violet / purple
+    8: (190, 60, 145),   # red-violet
+}
+LETTER_POINT_COLORS = {
+    1: TIER_COLORS[1],
+    2: TIER_COLORS[3],
+    3: TIER_COLORS[4],
+    4: TIER_COLORS[5],
+    5: TIER_COLORS[6],
+    8: TIER_COLORS[7],
+    10: TIER_COLORS[8],
+}
 
 # Runtime datasets: merged vocabulary tiers and Scrabble letter values.
 DATASET = pd.read_csv("merged.csv")
@@ -158,13 +174,21 @@ def random_letter():
 
 
 def letter_color(letter, dragging=False):
-    """Return the display color for a letter and its drag state."""
+    """Return a Scrabble-value color for a letter and its drag state."""
     upper_letter = letter.upper()
     if upper_letter == "S":
-        return S_DRAG_COLOR if dragging else S_COLOR
-    if upper_letter in "AEIOU":
-        return VOWEL_DRAG_COLOR if dragging else VOWEL_COLOR
-    return FALLING_DRAG_COLOR if dragging else FALLING_COLOR
+        color = TIER_COLORS[2]
+    else:
+        points = LETTER_POINTS.get(upper_letter, 1)
+        color = LETTER_POINT_COLORS.get(points, TIER_COLORS[1])
+    if not dragging:
+        return color
+    return tuple(min(255, channel + 35) for channel in color)
+
+
+def tier_color(tier):
+    """Return the display color for a tier number."""
+    return TIER_COLORS[tier]
 
 
 # ---------------------------------------------------------------------------
@@ -617,7 +641,7 @@ class Game:
             tier_text = self.font.render(
                 f"{TIER_NAMES[popup.tier]}",
                 True,
-                SCORE_POPUP_COLOR,
+                tier_color(popup.tier),
             )
             tier_text.set_alpha(popup_alpha)
             self.screen.blit(
