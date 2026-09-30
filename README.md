@@ -1,6 +1,6 @@
 # Letter Rise
 
-Letter Rise is a pygame word-building game demo. Letters fall from the top of the screen, and the player drags them into a growing stack of five-letter rows. Complete valid words to clear rows and earn points before the stack reaches the danger line.
+Letter Rise is a pygame word-building game demo. Letters fall from the top of the screen, and the player drags them into a growing stack of seven-block rows. Hover over a contiguous run of filled blocks and press Space to submit a word of one to seven letters. Complete valid words to clear runs and earn points before the stack reaches the danger line.
 
 ## Requirements
 
@@ -41,11 +41,11 @@ cells in any unlocked row. You can also drag letters already placed in a row
 to rearrange them. Dropping a falling letter onto an occupied cell replaces
 that letter, which resumes falling from the drop position.
 
-Rows are five letters wide. When a row is full:
+Rows are seven blocks wide. Hovering over any filled, unlocked block highlights the contiguous filled run connected to it. Press Space to confirm that run:
 
-- A valid word clears the row and adds its dataset-based score.
-- Clearing a valid row unlocks every other locked/red row.
-- An invalid word locks the row and colors it red until a valid row is cleared.
+- A valid one-to-seven-letter word clears only the confirmed run and adds its dataset-based score. The cleared blocks remain as gaps. The row disappears only after all seven block positions have been included in valid scores.
+- An invalid word locks only the confirmed run and colors those blocks red.
+- Letters can continue to be dragged into other empty, unlocked blocks.
 
 
 ## Game pressure and losing
@@ -60,6 +60,7 @@ resets the timer. The game ends when the grace period expires.
 | Input | Action |
 | --- | --- |
 | Left mouse button | Click and drag falling and grid letters |
+| `Space` | Confirm the contiguous run under the cursor |
 | `R` | Restart after Game Over |
 | `Esc` | Quit the game |
 | Window close | Quit the game |
@@ -102,6 +103,10 @@ When a word is cleared, its popup first shows the base score and multiplier,
 such as `56 x1.2`. After 500 milliseconds, the popup changes to the final
 multiplied score before fading out.
 
+A valid seven-letter word earns a BINGO bonus: the normal score is multiplied
+by 2. The popup shows the additional multiplier and displays `BINGO!` below
+the tier message.
+
 A separate tier message appears below the bottom row, using these names:
 Common, Uncommon, Rare, Epic, Legendary, Mythic, Ancient, and Celestial for
 tiers 1 through 8 respectively.
@@ -111,7 +116,7 @@ tiers 1 through 8 respectively.
 The game loads `merged.csv` and `scrabble_letter_points.csv` with pandas. Both
 files must be in the same directory as `main.py`. `merged.csv` must contain:
 
-- `word`: the lowercase five-letter word used for validation
+- `word`: the lowercase one-to-seven-letter word used for validation
 - `tier`: the word's rarity tier
 - `count`: word frequency information retained in the CSV
 
@@ -120,11 +125,16 @@ files must be in the same directory as `main.py`. `merged.csv` must contain:
 - `character`: a letter
 - `points`: that letter's Scrabble value
 
-The game also builds a weighted falling-letter pool from the words. Letters that appear more often in the word list are therefore more likely to fall.
+The game builds a weighted falling-letter pool from the `count` values of every
+non-empty word in `merged.csv`. Each letter receives the combined frequency of
+the words that contain it, so letters from more common words are more likely to
+fall. This spawn pool is independent of the one-to-seven-letter validation
+limit.
 
-Words longer or shorter than five letters in `merged.csv` are ignored because
-the game board has five cells per row. The other CSV files in `source_data/`
-are data-cleaning or reference files and are not loaded directly by `main.py`.
+For validation, words from one to seven letters are accepted. The game also
+adds `A` and `I` as tier-1 one-letter words. The other CSV files in
+`source_data/` are data-cleaning or reference files and are not loaded directly
+by `main.py`.
 
 ## Project files
 
@@ -132,6 +142,25 @@ are data-cleaning or reference files and are not loaded directly by `main.py`.
 - `merged.csv`: runtime word list, frequencies, and rarity tiers
 - `scrabble_letter_points.csv`: Scrabble letter values
 - `source_data/`: source word-frequency data and the data-cleaning notebook
+
+## Color rules
+
+Tier names use the same ascending palette as the rarity tiers:
+
+| Tier | Name | Color |
+| --- | --- | --- |
+| 1 | Common | Red |
+| 2 | Uncommon | Red-orange |
+| 3 | Rare | Yellow |
+| 4 | Epic | Yellow-green |
+| 5 | Legendary | Green |
+| 6 | Mythic | Blue-green |
+| 7 | Ancient | Blue-violet / purple |
+| 8 | Celestial | Red-violet |
+
+Falling letters use the same palette in this order: 1-point letters, `S`,
+2-point, 3-point, 4-point, 5-point, 8-point, and 10-point letters. Dragged
+letters use a lighter version of their assigned color.
 
 ## Current status
 
@@ -148,41 +177,42 @@ syntax.
 ```text
 LOAD merged.csv
 LOAD scrabble_letter_points.csv
-CREATE WORD_TIERS from five-letter words and their tier column
+CREATE WORD_TIERS from one-to-seven-letter words and their tier column
+ADD A and I to WORD_TIERS as tier-1 words
 CREATE WORD_SET from WORD_TIERS for fast membership checks
 CREATE LETTER_POINTS from the character and points columns
 
-CREATE an empty letter frequency map
-FOR each word in WORD_LIST:
-	FOR each character in the word:
-		increase that character's frequency
+CREATE an empty letter weight map
+FOR each non-empty word and its count in merged.csv:
+	FOR each character in word:
+		increase that character's weight by the word count
 
-CREATE LETTER_POOL
-FOR each character and frequency:
-	add the character to LETTER_POOL frequency times
+CREATE LETTER_POOL from the weighted characters
 
 FUNCTION random_letter:
-	return one random character from LETTER_POOL
+	return one character selected using LETTER_WEIGHTS
 ```
 
-The repeated characters in `LETTER_POOL` make common letters more likely to appear as falling letters.
+The word counts in `merged.csv` make letters from more common words more likely
+to appear as falling letters.
 
 ### `Row` and `FallingLetter`
 
 ```text
 CLASS Row:
 	FUNCTION initialize:
-		cells = a list of five empty values
+		cells = a list of seven empty values
 		hole_cols = an empty set used only for visual highlighting
-		locked = false
+		locked_cols = an empty set
 
 	FUNCTION is_full:
 		return true only when every value in cells is filled
 
-	FUNCTION word:
-		convert the five cells into one string
-		use "?" for any empty cell
-		return the resulting string
+	FUNCTION segment_word(start, end):
+		return the contiguous letters from start through end
+
+	FUNCTION is_locked(column):
+		return true when column is in locked_cols
 
 CLASS FallingLetter:
 	FUNCTION initialize(letter, x, y):
@@ -293,24 +323,24 @@ FUNCTION on_row_cleared(current_time):
 ```
 
 ```text
-FUNCTION try_clear_row(row_index, current_time):
+FUNCTION try_clear_segment(row_index, start, end, current_time):
 	row = rows[row_index]
 
-	IF row is locked OR row is not full:
+	IF the candidate contains an empty or locked block:
 		stop
 
-	candidate_word = row.word()
+	candidate_word = row.segment_word(start, end)
 
 	IF candidate_word exists in WORD_SET:
 		base_points = sum(LETTER_POINTS for each letter in candidate_word)
 		score += base_points * the multiplier for WORD_TIERS[candidate_word]
-		empty all cells in the row
-		clear its hole markers
+		empty cells from start through end
+		mark those cells as holes
+		mark columns from start through end as scored
 		reset the danger timer if necessary
-		remove the entire row from rows
-		unlock every remaining locked row
+		remove the row only when all seven columns are scored
 	ELSE:
-		row.locked = true
+		add columns from start through end to row.locked_cols
 ```
 
 ### Finding objects under the mouse
@@ -371,7 +401,6 @@ FUNCTION handle_mouseup(mouse_position):
 		IF the cell is empty:
 			place dragged.letter in the cell
 			remove dragged from falling
-			check the row for a valid word
 			stop
 
 		ELSE IF dragged.origin is "fall":
@@ -379,12 +408,23 @@ FUNCTION handle_mouseup(mouse_position):
 			put dragged.letter in the cell
 			remove dragged from falling
 			create a new falling letter for evicted at the drop position
-			check the row for a valid word
 			stop
 
 	place it at the release position and let it resume falling
 
 	mark dragged as no longer being dragged
+```
+
+```text
+FUNCTION find_hover_candidate(mouse_position):
+	find the filled, unlocked cell under the cursor
+	scan left and right through contiguous filled, unlocked cells
+	return the row and the start/end columns of that run
+
+FUNCTION confirm_hovered_segment:
+	find the hover candidate
+	IF one exists:
+		submit its one-to-seven-letter word to segment validation
 ```
 
 ### Reset, rendering, and main loop

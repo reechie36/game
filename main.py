@@ -53,7 +53,7 @@ import pandas as pd
 SCREEN_W, SCREEN_H = 820, 820
 FPS = 60
 
-ROW_LEN = 5                 # letters per row
+ROW_LEN = 7                 # blocks per row; submitted words may use 1-7 blocks
 CELL = 64                   # cell size in px
 CELL_GAP = 6
 BOARD_LEFT = (SCREEN_W - (ROW_LEN * CELL + (ROW_LEN - 1) * CELL_GAP)) // 2
@@ -75,6 +75,7 @@ ROW_HOLD_MS = 300
 ROW_FLICKER_MS = 200
 SCORE_POPUP_MS = 900
 SCORE_POPUP_INTRO_MS = 500
+BINGO_BONUS_MULTIPLIER = 2
 
 # Colors
 BG = (18, 18, 24)
@@ -119,10 +120,20 @@ LETTER_POINTS_DATASET = pd.read_csv("scrabble_letter_points.csv")
 WORD_TIERS = {
     str(word).strip().lower(): int(tier)
     for word, tier in zip(DATASET["word"], DATASET["tier"])
-    if len(str(word).strip()) == ROW_LEN
+    if 1 <= len(str(word).strip()) <= ROW_LEN
 }
+WORD_TIERS.update({"a": 1, "i": 1})
 WORD_LIST = list(WORD_TIERS)
 WORD_SET = set(WORD_LIST)
+WORD_FREQUENCIES = {}
+for word, count in zip(DATASET["word"], DATASET["count"]):
+    normalized_word = str(word).strip().lower()
+    if normalized_word:
+        WORD_FREQUENCIES[normalized_word] = (
+            WORD_FREQUENCIES.get(normalized_word, 0) + int(count)
+        )
+WORD_FREQUENCIES.setdefault("a", 1)
+WORD_FREQUENCIES.setdefault("i", 1)
 LETTER_POINTS = {
     str(character).strip().upper(): int(points)
     for character, points in zip(
@@ -159,18 +170,17 @@ def calculate_word_score(word):
     base_points = sum(LETTER_POINTS[letter] for letter in normalized_word.upper())
     return base_points * TIER_MULTIPLIERS[tier]
 
-# Weighted letter pool built from the word list so common letters fall more often
-_letter_counts = {}
-for _w in WORD_LIST:
-    for _ch in _w:
-        _letter_counts[_ch] = _letter_counts.get(_ch, 0) + 1
-LETTER_POOL = []
-for _ch, _n in _letter_counts.items():
-    LETTER_POOL.extend([_ch] * _n)
+# Weighted letter pool built from merged.csv word frequencies.
+_letter_weights = {}
+for _word, _word_count in WORD_FREQUENCIES.items():
+    for _ch in _word:
+        _letter_weights[_ch] = _letter_weights.get(_ch, 0) + _word_count
+LETTER_POOL = list(_letter_weights)
+LETTER_WEIGHTS = list(_letter_weights.values())
 
 
 def random_letter():
-    return random.choice(LETTER_POOL)
+    return random.choices(LETTER_POOL, weights=LETTER_WEIGHTS, k=1)[0]
 
 
 def letter_color(letter, dragging=False):
@@ -201,15 +211,23 @@ class Row:
     def __init__(self):
         self.cells = [None] * ROW_LEN     # each entry: letter char or None
         self.hole_cols = set()             # columns freshly vacated (visual only)
-        self.locked = False
+        self.locked_cols = set()
+        self.scored_cols = set()
         self.resolution_phase = None       # "hold" or "flicker" while checking
         self.resolution_until = 0
+        self.resolution_range = None
 
     def is_full(self):
         return all(c is not None for c in self.cells)
 
     def word(self):
         return "".join(c if c else "?" for c in self.cells)
+
+    def segment_word(self, start, end):
+        return "".join(self.cells[start:end + 1])
+
+    def is_locked(self, col):
+        return col in self.locked_cols
 
 
 class FallingLetter:
@@ -224,11 +242,12 @@ class FallingLetter:
 
 
 class ScorePopup:
-    def __init__(self, base_points, multiplier, points, tier, x, y, created_at):
+    def __init__(self, base_points, multiplier, points, tier, bingo, x, y, created_at):
         self.base_points = base_points
         self.multiplier = multiplier
         self.points = points
         self.tier = tier
+        self.bingo = bingo
         self.x = x
         self.y = y
         self.created_at = created_at
@@ -350,8 +369,6 @@ class Board:
         if in_danger and not self.grace_active:
             self.grace_active = True
             self.grace_end = now + GRACE_PERIOD_MS
-            for row in self.rows:
-                row.locked = False
         elif not in_danger:
             self.grace_active = False
 
@@ -372,14 +389,19 @@ class Board:
                 self.finish_row_resolution(row, now)
 
     def finish_row_resolution(self, row, now):
-        word = row.word()
+        start, end = row.resolution_range
+        word = row.segment_word(start, end)
         row.resolution_phase = None
         row.resolution_until = 0
+        row.resolution_range = None
         if word in WORD_SET:
             tier = WORD_TIERS[word]
             multiplier = TIER_MULTIPLIERS[tier]
             base_points = sum(LETTER_POINTS[letter] for letter in word.upper())
             points = base_points * multiplier
+            bingo = len(word) == ROW_LEN
+            if bingo:
+                points *= BINGO_BONUS_MULTIPLIER
             self.score += points
             row_index = self.rows.index(row)
             self.score_popups.append(ScorePopup(
@@ -387,27 +409,36 @@ class Board:
                 multiplier,
                 points,
                 tier,
-                BOARD_LEFT + (ROW_LEN * CELL + (ROW_LEN - 1) * CELL_GAP) / 2,
+                bingo,
+                BOARD_LEFT + ((start + end + 1) * CELL + (start + end) * CELL_GAP) / 2,
                 self.row_top_y(row_index) + CELL / 2,
                 now,
             ))
-            row.cells = [None] * ROW_LEN
-            row.hole_cols.clear()
+            for col in range(start, end + 1):
+                row.cells[col] = None
+                row.hole_cols.add(col)
+            row.scored_cols.update(range(start, end + 1))
             self.on_row_cleared(now)
-            self.rows.remove(row)
-            for other_row in self.rows:
-                other_row.locked = False
+            if len(row.scored_cols) == ROW_LEN:
+                row.hole_cols.clear()
+                self.rows.remove(row)
         else:
-            row.locked = True
+            row.locked_cols.update(range(start, end + 1))
 
     # -- word checking -------------------------------------------------
 
-    def try_clear_row(self, row_idx, now):
+    def try_clear_segment(self, row_idx, start, end, now):
         row = self.rows[row_idx]
-        if row.locked or row.resolution_phase is not None or not row.is_full():
+        if row.resolution_phase is not None:
+            return
+        if any(
+            row.cells[col] is None or row.is_locked(col)
+            for col in range(start, end + 1)
+        ):
             return
         row.resolution_phase = "hold"
         row.resolution_until = now + ROW_HOLD_MS
+        row.resolution_range = (start, end)
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +475,35 @@ class Game:
                     return r_idx, c
         return None
 
+    def find_hover_candidate(self, pos):
+        cell = self.find_grid_cell_at(pos)
+        if cell is None:
+            return None
+        row_idx, col = cell
+        row = self.board.rows[row_idx]
+        if (
+            row.resolution_phase is not None
+            or row.cells[col] is None
+            or row.is_locked(col)
+        ):
+            return None
+
+        start = col
+        while (
+            start > 0
+            and row.cells[start - 1] is not None
+            and not row.is_locked(start - 1)
+        ):
+            start -= 1
+        end = col
+        while (
+            end < ROW_LEN - 1
+            and row.cells[end + 1] is not None
+            and not row.is_locked(end + 1)
+        ):
+            end += 1
+        return row_idx, start, end
+
     # -- mouse handling ----------------------------------------------------
 
     def handle_mousedown(self, pos):
@@ -461,7 +521,11 @@ class Game:
         if cell is not None:
             r_idx, c = cell
             row = self.board.rows[r_idx]
-            if not row.locked and row.resolution_phase is None and row.cells[c] is not None:
+            if (
+                row.resolution_phase is None
+                and not row.is_locked(c)
+                and row.cells[c] is not None
+            ):
                 letter = row.cells[c]
                 row.cells[c] = None
                 row.hole_cols.discard(c)
@@ -488,13 +552,12 @@ class Game:
         if cell is not None:
             r_idx, c = cell
             row = self.board.rows[r_idx]
-            if not row.locked and row.resolution_phase is None:
+            if row.resolution_phase is None and not row.is_locked(c):
                 if row.cells[c] is None:
                     row.cells[c] = fl.letter
                     row.hole_cols.discard(c)
                     if fl in self.board.falling:
                         self.board.falling.remove(fl)
-                    self.board.try_clear_row(r_idx, now)
                     return
                 elif fl.origin == "fall":
                     # replace: evicted letter resumes falling from this spot
@@ -506,7 +569,6 @@ class Game:
                     new_fl = FallingLetter(evicted, pos[0], pos[1])
                     new_fl.origin = "fall"
                     self.board.falling.append(new_fl)
-                    self.board.try_clear_row(r_idx, now)
                     return
                 # occupied + origin == "grid": no-op, falls through to invalid-drop handling
 
@@ -515,6 +577,20 @@ class Game:
         fl.x, fl.y = pos
         # dragging flag cleared implicitly since fl.dragging isn't checked elsewhere
         fl.dragging = False
+
+    def confirm_hovered_segment(self):
+        if self.board.game_over or self.dragging is not None:
+            return
+        candidate = self.find_hover_candidate(pygame.mouse.get_pos())
+        if candidate is None:
+            return
+        row_idx, start, end = candidate
+        self.board.try_clear_segment(
+            row_idx,
+            start,
+            end,
+            pygame.time.get_ticks(),
+        )
 
     # -- render -----------------------------------------------------------
 
@@ -590,15 +666,24 @@ class Game:
 
         # Draw the grid last so its cells and letters stay visible above the
         # disappearance line and its masking gradient.
+        hover_candidate = None
+        if self.dragging is None:
+            hover_candidate = self.find_hover_candidate(pygame.mouse.get_pos())
+        hovered_cell = self.find_grid_cell_at(pygame.mouse.get_pos())
         for r_idx, row in enumerate(board.rows):
             top_y = board.row_top_y(r_idx)
             if top_y < -CELL:
                 continue
             for c in range(ROW_LEN):
                 rect = board.cell_rect(r_idx, c)
-                if row.locked:
+                if row.is_locked(c):
                     color = ROW_INVALID_COLOR
-                elif row.resolution_phase == "flicker" and (pygame.time.get_ticks() // 50) % 2 == 0:
+                elif (
+                    row.resolution_phase == "flicker"
+                    and row.resolution_range is not None
+                    and row.resolution_range[0] <= c <= row.resolution_range[1]
+                    and (pygame.time.get_ticks() // 50) % 2 == 0
+                ):
                     color = ROW_FLICKER_COLOR
                 elif c in row.hole_cols:
                     color = CELL_HOLE
@@ -608,6 +693,24 @@ class Game:
                     color = CELL_EMPTY
                 pygame.draw.rect(self.screen, color, rect, border_radius=6)
                 pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
+                if hover_candidate is not None and hover_candidate[0] == r_idx:
+                    _, start, end = hover_candidate
+                    if start <= c <= end:
+                        pygame.draw.rect(
+                            self.screen,
+                            ROW_FLICKER_COLOR,
+                            rect,
+                            3,
+                            border_radius=6,
+                        )
+                if hovered_cell == (r_idx, c):
+                    pygame.draw.rect(
+                        self.screen,
+                        TEXT_COLOR,
+                        rect,
+                        3,
+                        border_radius=6,
+                    )
                 if row.cells[c] is not None:
                     txt = self.font.render(row.cells[c].upper(), True, letter_color(row.cells[c]))
                     self.screen.blit(txt, txt.get_rect(center=rect.center))
@@ -631,6 +734,8 @@ class Game:
             if age < SCORE_POPUP_INTRO_MS:
                 popup_alpha = 255
                 popup_text = f"{popup.base_points:g} x {popup.multiplier:g}"
+                if popup.bingo:
+                    popup_text += f" x{BINGO_BONUS_MULTIPLIER:g}"
             else:
                 popup_alpha = round(255 * (1 - progress))
                 popup_text = f"+ {popup.points:g}!"
@@ -648,6 +753,13 @@ class Game:
                 tier_text,
                 tier_text.get_rect(center=(SCREEN_W // 2, BOARD_BOTTOM_Y + 75)),
             )
+            if popup.bingo:
+                bingo_text = self.big_font.render("BINGO!", True, SCORE_POPUP_COLOR)
+                bingo_text.set_alpha(popup_alpha)
+                self.screen.blit(
+                    bingo_text,
+                    bingo_text.get_rect(center=(SCREEN_W // 2, BOARD_BOTTOM_Y + 125)),
+                )
 
         score_txt = self.font.render(f"Score: {board.score}", True, TEXT_COLOR)
         self.screen.blit(score_txt, (16, 16))
@@ -677,6 +789,8 @@ class Game:
                         running = False
                     elif event.key == pygame.K_r and self.board.game_over:
                         self.reset()
+                    elif event.key == pygame.K_SPACE:
+                        self.confirm_hovered_segment()
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     self.handle_mousedown(event.pos)
                 elif event.type == pygame.MOUSEMOTION:
