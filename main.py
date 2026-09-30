@@ -614,8 +614,8 @@ class Game:
             popup_txt.set_alpha(popup_alpha)
             self.screen.blit(popup_txt, popup_txt.get_rect(center=(round(popup.x), round(popup_y))))
 
-            tier_text = self.small_font.render(
-                f"Tier {popup.tier}: {TIER_NAMES[popup.tier]}",
+            tier_text = self.font.render(
+                f"{TIER_NAMES[popup.tier]}",
                 True,
                 SCORE_POPUP_COLOR,
             )
