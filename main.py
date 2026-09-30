@@ -74,6 +74,7 @@ GRACE_PERIOD_MS = 10_000
 ROW_HOLD_MS = 300
 ROW_FLICKER_MS = 200
 SCORE_POPUP_MS = 900
+SCORE_POPUP_INTRO_MS = 500
 
 # Colors
 BG = (18, 18, 24)
@@ -95,15 +96,52 @@ ROW_INVALID_COLOR = (170, 55, 55)
 ROW_FLICKER_COLOR = (245, 220, 110)
 SCORE_POPUP_COLOR = (255, 235, 135)
 
-# Dataset from wordle_referenced.csv (5-letter words only, lowercase, no punctuation)
-DATASET = pd.read_csv("wordle_referenced.csv", index_col=0)
+# Runtime datasets: merged vocabulary tiers and Scrabble letter values.
+DATASET = pd.read_csv("merged.csv")
+LETTER_POINTS_DATASET = pd.read_csv("scrabble_letter_points.csv")
 
-WORD_LIST = DATASET['word'].tolist()
-
-POINT_LIST = DATASET['points'].tolist()
-
-
+WORD_TIERS = {
+    str(word).strip().lower(): int(tier)
+    for word, tier in zip(DATASET["word"], DATASET["tier"])
+    if len(str(word).strip()) == ROW_LEN
+}
+WORD_LIST = list(WORD_TIERS)
 WORD_SET = set(WORD_LIST)
+LETTER_POINTS = {
+    str(character).strip().upper(): int(points)
+    for character, points in zip(
+        LETTER_POINTS_DATASET["character"], LETTER_POINTS_DATASET["points"]
+    )
+    if len(str(character).strip()) == 1
+}
+TIER_MULTIPLIERS = {
+    1: 1.0,
+    2: 1.2,
+    3: 1.5,
+    4: 2.0,
+    5: 2.5,
+    6: 3.0,
+    7: 3.5,
+    8: 4.0,
+}
+TIER_NAMES = {
+    1: "Common",
+    2: "Uncommon",
+    3: "Rare",
+    4: "Epic",
+    5: "Legendary",
+    6: "Mythic",
+    7: "Ancient",
+    8: "Celestial",
+}
+
+
+def calculate_word_score(word):
+    """Return Scrabble letter points multiplied by the word's tier bonus."""
+    normalized_word = word.strip().lower()
+    tier = WORD_TIERS[normalized_word]
+    base_points = sum(LETTER_POINTS[letter] for letter in normalized_word.upper())
+    return base_points * TIER_MULTIPLIERS[tier]
 
 # Weighted letter pool built from the word list so common letters fall more often
 _letter_counts = {}
@@ -162,8 +200,11 @@ class FallingLetter:
 
 
 class ScorePopup:
-    def __init__(self, points, x, y, created_at):
+    def __init__(self, base_points, multiplier, points, tier, x, y, created_at):
+        self.base_points = base_points
+        self.multiplier = multiplier
         self.points = points
+        self.tier = tier
         self.x = x
         self.y = y
         self.created_at = created_at
@@ -311,12 +352,17 @@ class Board:
         row.resolution_phase = None
         row.resolution_until = 0
         if word in WORD_SET:
-            point = POINT_LIST[WORD_LIST.index(word)]
-            points = round(((1 - point) * 100) + 100)
+            tier = WORD_TIERS[word]
+            multiplier = TIER_MULTIPLIERS[tier]
+            base_points = sum(LETTER_POINTS[letter] for letter in word.upper())
+            points = base_points * multiplier
             self.score += points
             row_index = self.rows.index(row)
             self.score_popups.append(ScorePopup(
+                base_points,
+                multiplier,
                 points,
+                tier,
                 BOARD_LEFT + (ROW_LEN * CELL + (ROW_LEN - 1) * CELL_GAP) / 2,
                 self.row_top_y(row_index) + CELL / 2,
                 now,
@@ -555,12 +601,29 @@ class Game:
         # Completed rows launch their score briefly upward before fading out.
         now = pygame.time.get_ticks()
         for popup in board.score_popups:
-            progress = (now - popup.created_at) / SCORE_POPUP_MS
+            age = now - popup.created_at
+            progress = age / SCORE_POPUP_MS
             popup_y = popup.y - 42 * progress
-            popup_alpha = round(255 * (1 - progress))
-            popup_txt = self.font.render(f"+ {popup.points}!", True, SCORE_POPUP_COLOR)
+            if age < SCORE_POPUP_INTRO_MS:
+                popup_alpha = 255
+                popup_text = f"{popup.base_points:g} x {popup.multiplier:g}"
+            else:
+                popup_alpha = round(255 * (1 - progress))
+                popup_text = f"+ {popup.points:g}!"
+            popup_txt = self.font.render(popup_text, True, SCORE_POPUP_COLOR)
             popup_txt.set_alpha(popup_alpha)
             self.screen.blit(popup_txt, popup_txt.get_rect(center=(round(popup.x), round(popup_y))))
+
+            tier_text = self.small_font.render(
+                f"Tier {popup.tier}: {TIER_NAMES[popup.tier]}",
+                True,
+                SCORE_POPUP_COLOR,
+            )
+            tier_text.set_alpha(popup_alpha)
+            self.screen.blit(
+                tier_text,
+                tier_text.get_rect(center=(SCREEN_W // 2, BOARD_BOTTOM_Y + 75)),
+            )
 
         score_txt = self.font.render(f"Score: {board.score}", True, TEXT_COLOR)
         self.screen.blit(score_txt, (16, 16))

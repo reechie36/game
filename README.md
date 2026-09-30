@@ -86,33 +86,51 @@ playfield layer during dragging.
 
 ## Scoring
 
-Each valid word has a `points` value in the dataset. The game calculates the
-score as:
+The game calculates each valid word's score from its Scrabble letter values and
+the word's tier in `merged.csv`:
 
 ```text
-round(((1 - points) * 100) + 100)
+sum(Scrabble letter points) * tier multiplier
 ```
+
+Tier multipliers are: tier 1 = 1.0, tier 2 = 1.2, tier 3 = 1.5, tier 4 = 2.0,
+tier 5 = 2.5, tier 6 = 3.0, tier 7 = 3.5, and tier 8 = 4.0.
 
 The score is shown in the top-left corner of the game window.
 
+When a word is cleared, its popup first shows the base score and multiplier,
+such as `56 x1.2`. After 500 milliseconds, the popup changes to the final
+multiplied score before fading out.
+
+A separate tier message appears below the bottom row, using these names:
+Common, Uncommon, Rare, Epic, Legendary, Mythic, Ancient, and Celestial for
+tiers 1 through 8 respectively.
+
 ## Dataset
 
-The game loads `wordle_referenced.csv` with pandas. The file must be in the
-same directory as `main.py` and must contain these columns:
+The game loads `merged.csv` and `scrabble_letter_points.csv` with pandas. Both
+files must be in the same directory as `main.py`. `merged.csv` must contain:
 
 - `word`: the lowercase five-letter word used for validation
-- `points`: the word's score value
-- `count` and `occurrence`: additional dataset information retained in the CSV
+- `tier`: the word's rarity tier
+- `count`: word frequency information retained in the CSV
+
+`scrabble_letter_points.csv` must contain:
+
+- `character`: a letter
+- `points`: that letter's Scrabble value
 
 The game also builds a weighted falling-letter pool from the words. Letters that appear more often in the word list are therefore more likely to fall.
 
-The other CSV files in `source_data/` are data-cleaning or reference files and
-are not loaded directly by `main.py`.
+Words longer or shorter than five letters in `merged.csv` are ignored because
+the game board has five cells per row. The other CSV files in `source_data/`
+are data-cleaning or reference files and are not loaded directly by `main.py`.
 
 ## Project files
 
 - `main.py`: pygame game, game state, input handling, rendering, and scoring
-- `wordle_referenced.csv`: runtime word list and word scores
+- `merged.csv`: runtime word list, frequencies, and rarity tiers
+- `scrabble_letter_points.csv`: Scrabble letter values
 - `source_data/`: source word-frequency data and the data-cleaning notebook
 
 ## Current status
@@ -128,10 +146,11 @@ syntax.
 ### Data preparation
 
 ```text
-LOAD wordle_referenced.csv
-CREATE WORD_LIST from the word column
-CREATE POINT_LIST from the points column
-CREATE WORD_SET from WORD_LIST for fast membership checks
+LOAD merged.csv
+LOAD scrabble_letter_points.csv
+CREATE WORD_TIERS from five-letter words and their tier column
+CREATE WORD_SET from WORD_TIERS for fast membership checks
+CREATE LETTER_POINTS from the character and points columns
 
 CREATE an empty letter frequency map
 FOR each word in WORD_LIST:
@@ -283,9 +302,8 @@ FUNCTION try_clear_row(row_index, current_time):
 	candidate_word = row.word()
 
 	IF candidate_word exists in WORD_SET:
-		find candidate_word's matching index in WORD_LIST
-		point_value = POINT_LIST at that index
-		score += round(((1 - point_value) * 100) + 100)
+		base_points = sum(LETTER_POINTS for each letter in candidate_word)
+		score += base_points * the multiplier for WORD_TIERS[candidate_word]
 		empty all cells in the row
 		clear its hole markers
 		reset the danger timer if necessary
