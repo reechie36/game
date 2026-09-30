@@ -761,13 +761,13 @@ class Game:
                     bingo_text.get_rect(center=(SCREEN_W // 2, BOARD_BOTTOM_Y + 125)),
                 )
 
-        score_txt = self.font.render(f"Score: {board.score}", True, TEXT_COLOR)
+        score_txt = self.font.render(f"Score: {board.score:.2f}", True, TEXT_COLOR)
         self.screen.blit(score_txt, (16, 16))
 
         if board.game_over:
             go_txt = self.big_font.render("GAME OVER", True, (240, 90, 90))
             self.screen.blit(go_txt, go_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 30)))
-            sc_txt = self.font.render(f"Final score: {board.score}", True, TEXT_COLOR)
+            sc_txt = self.font.render(f"Final score: {board.score:.2f}", True, TEXT_COLOR)
             self.screen.blit(sc_txt, sc_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 20)))
             r_txt = self.small_font.render("Press R to restart, ESC to quit", True, TEXT_COLOR)
             self.screen.blit(r_txt, r_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 60)))
