@@ -325,6 +325,8 @@ class Board:
             row.hole_cols.clear()
             self.on_row_cleared(now)
             self.rows.remove(row)
+            for other_row in self.rows:
+                other_row.locked = False
         else:
             row.locked = True
 
@@ -476,17 +478,7 @@ class Game:
         # danger / buffer line
         pygame.draw.line(self.screen, DANGER_LINE_COLOR, (0, BUFFER_LINE_Y), (SCREEN_W, BUFFER_LINE_Y), 2)
 
-        # bank
-        for i in range(BANK_SLOTS):
-            rect = board.bank_rect(i)
-            pygame.draw.rect(self.screen, BANK_COLOR, rect, border_radius=6)
-            pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
-            if board.bank[i] is not None:
-                txt = self.font.render(board.bank[i].upper(), True, letter_color(board.bank[i]))
-                self.screen.blit(txt, txt.get_rect(center=rect.center))
-        bank_label = self.small_font.render("BANK", True, TEXT_COLOR)
-        self.screen.blit(bank_label, (BANK_LEFT, BANK_Y - 22))
-        self.screen.blit(bank_label, (BANK_RIGHT, BANK_Y - 22))
+        
 
         # Draw ungrabbed letters before the deletion mask so they disappear
         # behind the stack boundary as they pass under it.
@@ -570,7 +562,10 @@ class Game:
             popup_txt.set_alpha(popup_alpha)
             self.screen.blit(popup_txt, popup_txt.get_rect(center=(round(popup.x), round(popup_y))))
 
-            self.screen.blit(overlay, (0, 0))
+        score_txt = self.font.render(f"Score: {board.score}", True, TEXT_COLOR)
+        self.screen.blit(score_txt, (16, 16))
+
+        if board.game_over:
             go_txt = self.big_font.render("GAME OVER", True, (240, 90, 90))
             self.screen.blit(go_txt, go_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 30)))
             sc_txt = self.font.render(f"Final score: {board.score}", True, TEXT_COLOR)

@@ -29,19 +29,31 @@ On Windows, activate the environment with:
 Run the game from the project directory so it can find the word dataset:
 
 ```bash
-python gamev2.py
+python main.py
 ```
 
 The game window is 820 x 820 pixels and runs at up to 60 frames per second.
 
 ## How to play
 
+Letters fall from the top of the window. Click and drag letters into empty
+cells in any unlocked row. You can also drag letters already placed in a row
+to rearrange them. Dropping a falling letter onto an occupied cell replaces
+that letter, which resumes falling from the drop position.
 
 Rows are five letters wide. When a row is full:
+
+- A valid word clears the row and adds its dataset-based score.
+- Clearing a valid row unlocks every other locked/red row.
+- An invalid word locks the row and colors it red until a valid row is cleared.
 
 
 ## Game pressure and losing
 
+The stack grows upward automatically every 17.5 seconds. Falling letters that
+reach the stack or the bottom disappear. When the stack reaches the danger
+line, a 10-second grace period begins. Clearing a valid row during that period
+resets the timer. The game ends when the grace period expires.
 
 ## Controls
 
@@ -65,7 +77,7 @@ The main game renderer draws the scene in this order, from back to front:
 7. Grid cells and placed letters
 8. The currently dragged letter
 9. Score popups
-10. Score, danger timer, and game-over HUD
+10. Score and game-over HUD
 
 The cover hides falling letters after they pass through the gradient, while
 the grid and other UI are rendered afterward so they remain visible.
@@ -74,17 +86,19 @@ playfield layer during dragging.
 
 ## Scoring
 
-Each valid word has a `points` value in the dataset. The game calculates the score as:
+Each valid word has a `points` value in the dataset. The game calculates the
+score as:
 
 ```text
-rounded(points * 100)
+round(((1 - points) * 100) + 100)
 ```
 
 The score is shown in the top-left corner of the game window.
 
 ## Dataset
 
-The game loads `wordle_referenced.csv` with pandas. The file must be in the same directory as `gamev2.py` and must contain these columns:
+The game loads `wordle_referenced.csv` with pandas. The file must be in the
+same directory as `main.py` and must contain these columns:
 
 - `word`: the lowercase five-letter word used for validation
 - `points`: the word's score value
@@ -92,17 +106,14 @@ The game loads `wordle_referenced.csv` with pandas. The file must be in the same
 
 The game also builds a weighted falling-letter pool from the words. Letters that appear more often in the word list are therefore more likely to fall.
 
-The other CSV and JSON files in the project are data-cleaning or reference files and are not loaded directly by `gamev2.py`.
+The other CSV files in `source_data/` are data-cleaning or reference files and
+are not loaded directly by `main.py`.
 
 ## Project files
 
-- `gamev2.py`: pygame game, game state, input handling, rendering, and scoring
+- `main.py`: pygame game, game state, input handling, rendering, and scoring
 - `wordle_referenced.csv`: runtime word list and word scores
-- `wordle.csv`: source word-frequency data
-- `unigram_freq.csv`: general word-frequency data
-- `unigram_freq_5.csv`: five-letter word-frequency data
-- `words.json`: additional word data
-- `datacleaner.ipynb`: notebook used for data preparation and exploration
+- `source_data/`: source word-frequency data and the data-cleaning notebook
 
 ## Current status
 
@@ -110,7 +121,9 @@ This is a standalone quick demo of the Letter Rise game concept. It has no save 
 
 ## Function pseudocode
 
-The following pseudocode describes the main functions in `gamev3.py`. It is language-independent and focuses on the game logic rather than pygame drawing syntax.
+The following pseudocode describes the main functions in `main.py`. It is
+language-independent and focuses on the game logic rather than pygame drawing
+syntax.
 
 ### Data preparation
 
@@ -272,11 +285,12 @@ FUNCTION try_clear_row(row_index, current_time):
 	IF candidate_word exists in WORD_SET:
 		find candidate_word's matching index in WORD_LIST
 		point_value = POINT_LIST at that index
-		score += round(point_value * 100)
+		score += round(((1 - point_value) * 100) + 100)
 		empty all cells in the row
 		clear its hole markers
 		reset the danger timer if necessary
 		remove the entire row from rows
+		unlock every remaining locked row
 	ELSE:
 		row.locked = true
 ```
@@ -371,17 +385,14 @@ FUNCTION reset:
 ```text
 FUNCTION draw:
 	clear the screen
-	draw the danger line
+	draw the danger line and danger overlay
 
 	FOR each row and cell:
 		choose a color based on locked, hole, filled, or empty state
 		draw the cell and its letter if present
 
 	draw falling letters
-	draw the current score
-
-	IF danger is active:
-		draw the remaining danger time
+	draw the current score and score popups
 
 	IF game_over:
 		draw the dark overlay, final score, and restart instructions
