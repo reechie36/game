@@ -80,6 +80,18 @@ SCORE_POPUP_INTRO_MS = 500
 BINGO_BONUS_MULTIPLIER = 2
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(PROJECT_DIR, "FiraMono-Regular.ttf")
+SOUNDS_DIR = os.path.join(PROJECT_DIR, "source_data", "sounds")
+SOUND_PATHS = {
+    "pickup": os.path.join(SOUNDS_DIR, "UI", "sci_fi_select.wav"),
+    "place": os.path.join(SOUNDS_DIR, "Card and Board", "chips_place_1.wav"),
+    "confirm": os.path.join(SOUNDS_DIR, "UI", "sci_fi_confirm.wav"),
+    "success": os.path.join(SOUNDS_DIR, "UI", "synth_process_complete.wav"),
+    "bingo": os.path.join(SOUNDS_DIR, "Items", "coin_jingle_small.wav"),
+    "error": os.path.join(SOUNDS_DIR, "UI", "sci_fi_error.wav"),
+    "grow": os.path.join(SOUNDS_DIR, "Retro", "power_up.wav"),
+    "warning": os.path.join(SOUNDS_DIR, "UI", "synth_warning.wav"),
+    "game_over": os.path.join(SOUNDS_DIR, "Retro", "lose.wav"),
+}
 
 # Colors
 BG = (18, 18, 24)
@@ -263,6 +275,7 @@ class Board:
     def __init__(self):
         self.rows = [Row()]  # start with one open row at the bottom
         self.falling = []
+        self.sound_events = []
         self.score = 0
         self.last_spawn = 0
         self.last_growth = pygame.time.get_ticks()
@@ -298,6 +311,7 @@ class Board:
         if now - self.last_growth >= ROW_GROWTH_INTERVAL_MS:
             self.last_growth = now
             self.rows.insert(0, Row())
+            self.sound_events.append("grow")
 
     def maybe_spawn(self, now):
         if len(self.falling) >= MAX_FALLING:
@@ -380,12 +394,14 @@ class Board:
         if in_danger and not self.grace_active:
             self.grace_active = True
             self.grace_end = now + GRACE_PERIOD_MS
+            self.sound_events.append("warning")
         elif not in_danger and self.grace_active:
             self.grace_active = False
             self.grace_end = 0
 
         if self.grace_active and now >= self.grace_end:
             self.game_over = True
+            self.sound_events.append("game_over")
 
     def on_row_cleared(self, now):
         """Call whenever a row successfully clears — resets grace timer."""
@@ -432,11 +448,13 @@ class Board:
             row.scored_cols.update(range(start, end + 1))
             self.unlock_adjacent_locked_cells(row, start, end)
             self.on_row_cleared(now)
+            self.sound_events.append("bingo" if bingo else "success")
             if len(row.scored_cols) == ROW_LEN:
                 row.hole_cols.clear()
                 self.rows.remove(row)
         else:
             row.locked_cols.update(range(start, end + 1))
+            self.sound_events.append("error")
 
     def unlock_adjacent_locked_cells(self, row, start, end):
         """Unlock contiguous locked cells directly beside a valid word."""
@@ -464,6 +482,7 @@ class Board:
         row.resolution_phase = "hold"
         row.resolution_until = now + ROW_HOLD_MS
         row.resolution_range = (start, end)
+        self.sound_events.append("confirm")
 
 
 # ---------------------------------------------------------------------------
@@ -472,10 +491,20 @@ class Board:
 
 class Game:
     def __init__(self):
+        pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
         pygame.display.set_caption("Letter Rise — Demo v2")
         self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
         self.clock = pygame.time.Clock()
+        self.sounds = {}
+        if pygame.mixer.get_init() is not None:
+            for name, path in SOUND_PATHS.items():
+                try:
+                    self.sounds[name] = pygame.mixer.Sound(path)
+                except pygame.error as error:
+                    print(f"Could not load sound '{path}': {error}")
+        else:
+            print("Sound effects are unavailable because the audio mixer failed to initialize.")
         self.font = pygame.font.Font(FONT_PATH, 30)
         self.font.set_bold(True)
         self.small_font = pygame.font.Font(FONT_PATH, 18)
@@ -486,6 +515,16 @@ class Game:
     def reset(self):
         self.board = Board()
         self.dragging = None  # the FallingLetter currently being dragged
+
+    def play_sound(self, name):
+        sound = self.sounds.get(name)
+        if sound is not None:
+            sound.play()
+
+    def play_board_sounds(self):
+        for event in self.board.sound_events:
+            self.play_sound(event)
+        self.board.sound_events.clear()
 
     # -- hit testing -----------------------------------------------------
 
@@ -542,6 +581,7 @@ class Game:
             fl.dragging = True
             fl.origin = "fall"
             self.dragging = fl
+            self.play_sound("pickup")
             return
 
         cell = self.find_grid_cell_at(pos)
@@ -560,6 +600,7 @@ class Game:
                 fl.dragging = True
                 fl.origin = "grid"
                 self.dragging = fl
+                self.play_sound("pickup")
                 self.board.falling.append(fl)
             return
 
@@ -585,6 +626,7 @@ class Game:
                     row.hole_cols.discard(c)
                     if fl in self.board.falling:
                         self.board.falling.remove(fl)
+                    self.play_sound("place")
                     return
                 elif fl.origin == "fall":
                     # replace: evicted letter resumes falling from this spot
@@ -596,6 +638,7 @@ class Game:
                     new_fl = FallingLetter(evicted, pos[0], pos[1])
                     new_fl.origin = "fall"
                     self.board.falling.append(new_fl)
+                    self.play_sound("place")
                     return
                 # occupied + origin == "grid": no-op, falls through to invalid-drop handling
 
@@ -835,6 +878,7 @@ class Game:
                     self.handle_mouseup(event.pos)
 
             self.board.update(dt, now)
+            self.play_board_sounds()
             self.draw()
 
         pygame.quit()
