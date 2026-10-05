@@ -37,6 +37,8 @@ class LeaderboardClient:
         profile.setdefault("player_name", "")
         profile.setdefault("public", True)
         profile.setdefault("personal_best", 0)
+        profile.setdefault("sound_volume", 0.75)
+        profile.setdefault("sound_muted", False)
         return profile
 
     def save_profile(self):

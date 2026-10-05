@@ -266,6 +266,8 @@ class LeaderboardClient:
         profile.setdefault("player_name", "")
         profile.setdefault("public", True)
         profile.setdefault("personal_best", 0)
+        profile.setdefault("sound_volume", 0.75)
+        profile.setdefault("sound_muted", False)
         return profile
 
     def save_profile(self):
@@ -691,21 +693,23 @@ class Game:
         self.title_font = pygame.font.Font(FONT_PATH, 58)
         self.title_font.set_bold(True)
         self.leaderboard = LeaderboardClient()
-        self.state = "menu"
-        self.name_input = self.leaderboard.profile["player_name"]
+        try:
+            self.audio_volume = max(0.0, min(1.0, float(self.leaderboard.profile["sound_volume"])))
+        except (KeyError, TypeError, ValueError):
+            self.audio_volume = 0.75
+        self.audio_muted = bool(self.leaderboard.profile.get("sound_muted", False))
+        self.apply_audio_settings()
+        self.state = "name_entry"
+        self.name_input = ""
         self.name_cursor = True
-        self.name_prompt = False
-        self.name_entry_return = "game_over"
+        self.name_prompt = True
+        self.name_entry_return = "menu"
         self.submission_started = False
         self.new_personal_best = False
         self.reset()
-        if self.leaderboard.profile["player_name"]:
-            self.state = "menu"
-        else:
-            self.name_input = ""
-            self.name_prompt = True
-            self.name_entry_return = "menu"
-            self.state = "name_entry"
+        self.name_prompt = True
+        self.name_entry_return = "menu"
+        self.state = "name_entry"
 
     def reset(self):
         self.board = Board()
@@ -714,10 +718,26 @@ class Game:
         self.name_prompt = False
         self.state = "playing"
 
+    def prompt_for_new_game(self):
+        self.name_input = ""
+        self.name_prompt = True
+        self.name_entry_return = "play"
+        self.state = "name_entry"
+
     def play_sound(self, name):
         sound = self.sounds.get(name)
-        if sound is not None:
+        if sound is not None and not self.audio_muted:
             sound.play()
+
+    def apply_audio_settings(self):
+        volume = 0.0 if self.audio_muted else self.audio_volume
+        for sound in self.sounds.values():
+            sound.set_volume(volume)
+
+    def save_audio_settings(self):
+        self.leaderboard.profile["sound_volume"] = self.audio_volume
+        self.leaderboard.profile["sound_muted"] = self.audio_muted
+        self.leaderboard.save_profile()
 
     def play_board_sounds(self):
         for event in self.board.sound_events:
@@ -825,9 +845,24 @@ class Game:
         privacy = "ON" if self.leaderboard.profile["public"] else "OFF"
         privacy_button = pygame.Rect(90, 285, 640, 54)
         name_button = pygame.Rect(90, 365, 640, 54)
-        back_button = pygame.Rect(90, 445, 640, 54)
+        volume_track = pygame.Rect(260, 470, 430, 10)
+        volume_label = "SOUND: MUTED" if self.audio_muted else f"SOUND: {round(self.audio_volume * 100)}%"
+        volume_text = self.small_font.render(volume_label, True, TEXT_COLOR)
+        self.screen.blit(volume_text, (90, 465))
+        pygame.draw.rect(self.screen, CELL_EMPTY, volume_track, border_radius=5)
+        pygame.draw.rect(
+            self.screen,
+            FALLING_COLOR,
+            pygame.Rect(volume_track.left, volume_track.top, round(volume_track.width * self.audio_volume), volume_track.height),
+            border_radius=5,
+        )
+        knob_x = volume_track.left + round(volume_track.width * self.audio_volume)
+        pygame.draw.circle(self.screen, TEXT_COLOR, (knob_x, volume_track.centery), 8)
+        mute_button = pygame.Rect(90, 525, 640, 54)
+        back_button = pygame.Rect(90, 605, 640, 54)
         self.draw_button(privacy_button, f"GLOBAL SCORES: {privacy}", privacy_button.collidepoint(mouse_pos))
         self.draw_button(name_button, "EDIT DISPLAY NAME", name_button.collidepoint(mouse_pos))
+        self.draw_button(mute_button, "UNMUTE SOUND" if self.audio_muted else "MUTE SOUND", mute_button.collidepoint(mouse_pos))
         self.draw_button(back_button, "BACK", back_button.collidepoint(mouse_pos))
 
     def draw_leaderboard(self):
@@ -1276,7 +1311,7 @@ class Game:
                         if self.name_prompt:
                             self.name_prompt = False
                             if self.state == "name_entry":
-                                self.state = self.name_entry_return
+                                self.state = "menu" if self.name_entry_return == "play" else self.name_entry_return
                         elif self.state in ("leaderboard", "settings"):
                             self.state = "menu"
                         elif self.state == "game_over":
@@ -1307,7 +1342,7 @@ class Game:
                             self.board.resume(now)
                             self.state = "playing"
                     elif event.key == pygame.K_r and self.state == "game_over":
-                        self.reset()
+                        self.prompt_for_new_game()
                     elif event.key == pygame.K_l and self.state == "game_over":
                         self.open_leaderboard()
                     elif event.key == pygame.K_m and self.state == "game_over":
@@ -1335,7 +1370,17 @@ class Game:
                             self.name_prompt = True
                             self.name_entry_return = "settings"
                             self.state = "name_entry"
-                        elif pygame.Rect(90, 445, 640, 54).collidepoint(event.pos):
+                        elif pygame.Rect(90, 435, 640, 70).collidepoint(event.pos):
+                            volume = (event.pos[0] - 260) / 430
+                            self.audio_volume = max(0.0, min(1.0, volume))
+                            self.audio_muted = False
+                            self.apply_audio_settings()
+                            self.save_audio_settings()
+                        elif pygame.Rect(90, 525, 640, 54).collidepoint(event.pos):
+                            self.audio_muted = not self.audio_muted
+                            self.apply_audio_settings()
+                            self.save_audio_settings()
+                        elif pygame.Rect(90, 605, 640, 54).collidepoint(event.pos):
                             self.state = "menu"
                     elif self.state == "playing":
                         self.handle_mousedown(event.pos)
