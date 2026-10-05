@@ -42,8 +42,12 @@ class Board:
         self.falling = []
         self.sound_events = []
         self.score = 0
-        self.last_spawn = 0
-        self.last_growth = pygame.time.get_ticks()
+        self.started_at = pygame.time.get_ticks()
+        self.ended_at = None
+        self.paused_at = None
+        self.paused_ms = 0
+        self.last_spawn = self.started_at
+        self.last_growth = self.started_at
         self.grace_active = False
         self.grace_end = 0
         self.game_over = False
@@ -73,8 +77,47 @@ class Board:
 
     # -- growth / spawning ---------------------------------------------
 
+    def difficulty_steps(self, now):
+        return self.active_elapsed_ms(now) // 60_000
+
+    def active_elapsed_ms(self, now):
+        end_time = self.ended_at if self.ended_at is not None else now
+        paused_ms = self.paused_ms
+        if self.paused_at is not None:
+            paused_ms += now - self.paused_at
+        return max(0, end_time - self.started_at - paused_ms)
+
+    def pause(self, now):
+        if self.paused_at is None:
+            self.paused_at = now
+
+    def resume(self, now):
+        if self.paused_at is None:
+            return
+        pause_duration = now - self.paused_at
+        self.paused_ms += pause_duration
+        self.last_spawn += pause_duration
+        self.last_growth += pause_duration
+        if self.grace_active:
+            self.grace_end += pause_duration
+        self.paused_at = None
+
+    def spawn_interval(self, now):
+        return max(
+            MIN_SPAWN_INTERVAL_MS,
+            SPAWN_INTERVAL_MS - self.difficulty_steps(now) * SPAWN_INTERVAL_STEP_MS,
+        )
+
+    def row_growth_interval(self, now):
+        return max(
+            MIN_ROW_GROWTH_INTERVAL_MS,
+            ROW_GROWTH_INTERVAL_MS - self.difficulty_steps(now) * ROW_GROWTH_INTERVAL_STEP_MS,
+        )
+
     def maybe_grow(self, now):
-        if now - self.last_growth >= ROW_GROWTH_INTERVAL_MS:
+        if self.grace_active:
+            return
+        if now - self.last_growth >= self.row_growth_interval(now):
             self.last_growth = now
             self.rows.insert(0, Row())
             self.sound_events.append("grow")
@@ -82,7 +125,7 @@ class Board:
     def maybe_spawn(self, now):
         if len(self.falling) >= MAX_FALLING:
             return
-        if now - self.last_spawn < SPAWN_INTERVAL_MS:
+        if now - self.last_spawn < self.spawn_interval(now):
             return
         self.last_spawn = now
         x = random.randint(CELL // 2, SCREEN_W - CELL // 2)
@@ -160,6 +203,7 @@ class Board:
         if in_danger and not self.grace_active:
             self.grace_active = True
             self.grace_end = now + GRACE_PERIOD_MS
+            self.last_growth = now
             self.sound_events.append("warning")
         elif not in_danger and self.grace_active:
             self.grace_active = False
@@ -167,7 +211,15 @@ class Board:
 
         if self.grace_active and now >= self.grace_end:
             self.game_over = True
+            self.ended_at = now
             self.sound_events.append("game_over")
+
+    def elapsed_seconds(self, now):
+        return self.active_elapsed_ms(now) // 1000
+
+    def grace_remaining_ms(self, now):
+        reference_time = self.paused_at if self.paused_at is not None else now
+        return max(0, self.grace_end - reference_time)
 
     def on_row_cleared(self, now):
         """Call whenever a row successfully clears — resets grace timer."""
@@ -243,7 +295,9 @@ class Board:
         if row.resolution_phase is not None:
             return
         if any(
-            row.cells[col] is None or row.is_locked(col)
+            row.cells[col] is None
+            or row.is_locked(col)
+            or col in row.scored_cols
             for col in range(start, end + 1)
         ):
             return

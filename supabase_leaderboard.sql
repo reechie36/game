@@ -42,6 +42,7 @@ as $$
       l.rarest_word_found,
       l.client_id = requested_client_id as is_me
     from public.leaderboard l
+    where l.score > 0
   )
   select r.rank, r.player_name, r.score, r.rarest_word_found, r.is_me
   from ranked r

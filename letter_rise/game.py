@@ -8,7 +8,7 @@ import pygame
 
 from .board import Board
 from .config import *
-from .data import TIER_NAMES, letter_color, tier_color
+from .data import TIER_NAMES, WORD_TIERS, calculate_word_score, letter_color, tier_color
 from .leaderboard import LeaderboardClient
 from .models import FallingLetter
 
@@ -44,7 +44,13 @@ class Game:
         self.submission_started = False
         self.new_personal_best = False
         self.reset()
-        self.state = "menu"
+        if self.leaderboard.profile["player_name"]:
+            self.state = "menu"
+        else:
+            self.name_input = ""
+            self.name_prompt = True
+            self.name_entry_return = "menu"
+            self.state = "name_entry"
 
     def reset(self):
         self.board = Board()
@@ -180,18 +186,40 @@ class Game:
             error = self.small_font.render(self.leaderboard.error, True, GRACE_COLOR)
             self.screen.blit(error, error.get_rect(center=(SCREEN_W // 2, 180)))
         else:
-            header = self.small_font.render("RANK       PLAYER                 SCORE       WORD", True, GRID_LINE)
-            self.screen.blit(header, (60, 120))
-            for index, row in enumerate(self.leaderboard.rows[:18]):
+            columns = ((78, "RANK"), (230, "PLAYER"), (430, "SCORE"), (585, "RAREST WORD"), (735, "WORD PTS"))
+            for x, label in columns:
+                header = self.small_font.render(label, True, GRID_LINE)
+                self.screen.blit(header, header.get_rect(center=(x, 120)))
+            positive_rows = []
+            for row in self.leaderboard.rows:
+                try:
+                    score = float(row.get("score", 0))
+                except (TypeError, ValueError):
+                    continue
+                if score > 0:
+                    positive_rows.append((row, score))
+            for index, (row, score) in enumerate(positive_rows[:18]):
                 y = 155 + index * 28
                 if row.get("is_me"):
                     pygame.draw.rect(self.screen, (75, 65, 35), (45, y - 3, 730, 27), border_radius=4)
                 rank = row.get("rank", index + 1)
                 player = str(row.get("player_name", "Unknown"))[:16]
-                score = float(row.get("score", 0))
                 word = str(row.get("rarest_word_found", "-"))[:10]
-                line = self.small_font.render(f"#{rank:<7} {player:<18} {score:>8.2f}   {word}", True, TEXT_COLOR)
-                self.screen.blit(line, (60, y))
+                word_points = 0
+                if word != "-" and word.lower() in WORD_TIERS:
+                    word_points = calculate_word_score(word)
+                    if len(word) == ROW_LEN:
+                        word_points *= BINGO_BONUS_MULTIPLIER
+                values = (
+                    (f"#{rank}", 78),
+                    (player, 230),
+                    (f"{score:.2f}", 430),
+                    (word, 585),
+                    (f"{word_points:.2f}", 735),
+                )
+                for value, x in values:
+                    text = self.small_font.render(value, True, TEXT_COLOR)
+                    self.screen.blit(text, text.get_rect(center=(x, y + 10)))
         back = pygame.Rect(260, 700, 300, 52)
         self.draw_button(back, "BACK", back.collidepoint(pygame.mouse.get_pos()))
 
@@ -220,6 +248,7 @@ class Game:
             row.resolution_phase is not None
             or row.cells[col] is None
             or row.is_locked(col)
+            or col in row.scored_cols
         ):
             return None
 
@@ -228,6 +257,7 @@ class Game:
             start > 0
             and row.cells[start - 1] is not None
             and not row.is_locked(start - 1)
+            and start - 1 not in row.scored_cols
         ):
             start -= 1
         end = col
@@ -235,6 +265,7 @@ class Game:
             end < ROW_LEN - 1
             and row.cells[end + 1] is not None
             and not row.is_locked(end + 1)
+            and end + 1 not in row.scored_cols
         ):
             end += 1
         return row_idx, start, end
@@ -260,6 +291,7 @@ class Game:
             if (
                 row.resolution_phase is None
                 and not row.is_locked(c)
+                and c not in row.scored_cols
                 and row.cells[c] is not None
             ):
                 letter = row.cells[c]
@@ -289,7 +321,11 @@ class Game:
         if cell is not None:
             r_idx, c = cell
             row = self.board.rows[r_idx]
-            if row.resolution_phase is None and not row.is_locked(c):
+            if (
+                row.resolution_phase is None
+                and not row.is_locked(c)
+                and c not in row.scored_cols
+            ):
                 if row.cells[c] is None:
                     row.cells[c] = fl.letter
                     row.hole_cols.discard(c)
@@ -352,14 +388,7 @@ class Game:
             return
         self.screen.fill(BG)
         board = self.board
-
-        # Tint the playfield more strongly red as the stack climbs toward the
-        # danger line, giving pressure a constant visual presence.
-        danger_level = board.danger_level()
-        if danger_level > 0:
-            danger_overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-            danger_overlay.fill((190, 25, 25, round(125 * danger_level)))
-            self.screen.blit(danger_overlay, (0, 0))
+        now = pygame.time.get_ticks()
 
         # The stack consumes falling letters at its highest top edge. Draw the
         # moving boundary line here; the masking gradient is drawn after the
@@ -431,6 +460,8 @@ class Game:
                 continue
             for c in range(ROW_LEN):
                 rect = board.cell_rect(r_idx, c)
+                if c in row.scored_cols:
+                    continue
                 if row.is_locked(c):
                     color = ROW_INVALID_COLOR
                 elif (
@@ -480,6 +511,18 @@ class Game:
             txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
             self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
 
+        if board.grace_active and not board.game_over:
+            beat_period_ms = 60_000 / 80
+            beat_phase = (now % beat_period_ms) / beat_period_ms
+            pulse = min(
+                1.0,
+                math.exp(-((beat_phase - 0.12) / 0.055) ** 2)
+                + 0.55 * math.exp(-((beat_phase - 0.27) / 0.08) ** 2),
+            )
+            grace_overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            grace_overlay.fill((255, 90, 90, round(18 + pulse * 55)))
+            self.screen.blit(grace_overlay, (0, 0))
+
         # Completed rows launch their score briefly upward before fading out.
         now = pygame.time.get_ticks()
         for popup in board.score_popups:
@@ -518,15 +561,14 @@ class Game:
 
         score_txt = self.font.render(f"Score: {board.score:.2f}", True, TEXT_COLOR)
         self.screen.blit(score_txt, (16, 16))
-
-        if board.grace_active and not board.game_over:
-            grace_left = max(0, board.grace_end - now)
-            grace_txt = self.small_font.render(
-                f"GRACE: {grace_left / 1000:.1f}s",
-                True,
-                GRACE_COLOR,
-            )
-            self.screen.blit(grace_txt, (16, 50))
+        elapsed_seconds = board.elapsed_seconds(now)
+        minutes, seconds = divmod(elapsed_seconds, 60)
+        time_txt = self.small_font.render(
+            f"Time: {minutes:02d}:{seconds:02d}",
+            True,
+            TEXT_COLOR,
+        )
+        self.screen.blit(time_txt, (SCREEN_W - time_txt.get_width() - 16, 20))
 
         if board.game_over:
             go_txt = self.big_font.render("GAME OVER", True, (240, 90, 90))
@@ -589,8 +631,10 @@ class Game:
                     elif self.name_prompt and event.key == pygame.K_RETURN:
                         if self.save_name():
                             self.name_prompt = False
-                            if self.name_entry_return == "settings":
-                                self.state = "settings"
+                            if self.name_entry_return in ("menu", "settings"):
+                                self.state = self.name_entry_return
+                            elif self.name_entry_return == "play":
+                                self.reset()
                             else:
                                 self.start_submission()
                     elif self.name_prompt and event.key == pygame.K_BACKSPACE:
@@ -602,8 +646,10 @@ class Game:
                             if self.dragging is not None:
                                 self.dragging.dragging = False
                                 self.dragging = None
+                            self.board.pause(now)
                             self.state = "paused"
                         else:
+                            self.board.resume(now)
                             self.state = "playing"
                     elif event.key == pygame.K_r and self.state == "game_over":
                         self.reset()
