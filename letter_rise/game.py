@@ -2,6 +2,7 @@
 
 import sys
 import threading
+import math
 
 import pygame
 
@@ -107,17 +108,37 @@ class Game:
 
     def draw_button(self, rect, label, active=False):
         color = (72, 72, 86) if active else (45, 45, 58)
-        pygame.draw.rect(self.screen, color, rect, border_radius=8)
-        pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=8)
+        if active:
+            pulse = 2 + round(2 * (1 + math.sin(pygame.time.get_ticks() / 140)) / 2)
+            animated_rect = rect.inflate(pulse * 2, pulse)
+            animated_rect.y -= pulse
+        else:
+            animated_rect = rect
+        pygame.draw.rect(self.screen, color, animated_rect, border_radius=8)
+        pygame.draw.rect(self.screen, FALLING_COLOR if active else GRID_LINE, animated_rect, 2, border_radius=8)
         text = self.font.render(label, True, TEXT_COLOR)
-        self.screen.blit(text, text.get_rect(center=rect.center))
+        self.screen.blit(text, text.get_rect(center=animated_rect.center))
 
     def draw_menu(self):
         self.screen.fill(BG)
         title = self.title_font.render("LETTER RISE", True, FALLING_COLOR)
         self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 140)))
+        mouse_pos = pygame.mouse.get_pos()
         for index, label in enumerate(("PLAY", "LEADERBOARD", "SETTINGS", "QUIT")):
-            self.draw_button(self.button_rect(index), label)
+            rect = self.button_rect(index)
+            self.draw_button(rect, label, rect.collidepoint(mouse_pos))
+
+    def draw_pause_overlay(self):
+        overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        overlay.fill((100, 100, 100, 190))
+        self.screen.blit(overlay, (0, 0))
+        pause_text = self.big_font.render("PAUSED", True, TEXT_COLOR)
+        self.screen.blit(
+            pause_text,
+            pause_text.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 24)),
+        )
+        hint = self.small_font.render("Press P to resume", True, TEXT_COLOR)
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 34)))
 
     def draw_name_prompt(self):
         self.screen.fill(BG)
@@ -139,10 +160,14 @@ class Game:
         self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 125)))
         name_text = self.font.render(f"Name: {self.leaderboard.profile['player_name'] or '(not set)'}", True, TEXT_COLOR)
         self.screen.blit(name_text, (90, 220))
+        mouse_pos = pygame.mouse.get_pos()
         privacy = "ON" if self.leaderboard.profile["public"] else "OFF"
-        self.draw_button(pygame.Rect(90, 285, 640, 54), f"GLOBAL SCORES: {privacy}")
-        self.draw_button(pygame.Rect(90, 365, 640, 54), "EDIT DISPLAY NAME")
-        self.draw_button(pygame.Rect(90, 445, 640, 54), "BACK")
+        privacy_button = pygame.Rect(90, 285, 640, 54)
+        name_button = pygame.Rect(90, 365, 640, 54)
+        back_button = pygame.Rect(90, 445, 640, 54)
+        self.draw_button(privacy_button, f"GLOBAL SCORES: {privacy}", privacy_button.collidepoint(mouse_pos))
+        self.draw_button(name_button, "EDIT DISPLAY NAME", name_button.collidepoint(mouse_pos))
+        self.draw_button(back_button, "BACK", back_button.collidepoint(mouse_pos))
 
     def draw_leaderboard(self):
         self.screen.fill(BG)
@@ -168,7 +193,7 @@ class Game:
                 line = self.small_font.render(f"#{rank:<7} {player:<18} {score:>8.2f}   {word}", True, TEXT_COLOR)
                 self.screen.blit(line, (60, y))
         back = pygame.Rect(260, 700, 300, 52)
-        self.draw_button(back, "BACK")
+        self.draw_button(back, "BACK", back.collidepoint(pygame.mouse.get_pos()))
 
     # -- hit testing -----------------------------------------------------
 
@@ -534,6 +559,9 @@ class Game:
                 hint = self.small_font.render("Enter to submit  |  Esc to stay offline", True, TEXT_COLOR)
                 self.screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, 410)))
 
+        if self.state == "paused":
+            self.draw_pause_overlay()
+
         pygame.display.flip()
 
     # -- main loop ----------------------------------------------------------
@@ -569,6 +597,14 @@ class Game:
                         self.name_input = self.name_input[:-1]
                     elif self.name_prompt and event.unicode.isprintable():
                         self.name_input = (self.name_input + event.unicode)[:16]
+                    elif event.key == pygame.K_p and self.state in ("playing", "paused"):
+                        if self.state == "playing":
+                            if self.dragging is not None:
+                                self.dragging.dragging = False
+                                self.dragging = None
+                            self.state = "paused"
+                        else:
+                            self.state = "playing"
                     elif event.key == pygame.K_r and self.state == "game_over":
                         self.reset()
                     elif event.key == pygame.K_l and self.state == "game_over":

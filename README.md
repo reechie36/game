@@ -61,6 +61,7 @@ resets the timer. The game ends when the grace period expires.
 | --- | --- |
 | Left mouse button | Click and drag falling and grid letters |
 | `Space` | Confirm the contiguous run under the cursor |
+| `P` | Pause or resume the game |
 | `R` | Restart after Game Over |
 | `Esc` | Quit the game |
 | Window close | Quit the game |
