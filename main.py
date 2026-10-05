@@ -26,6 +26,8 @@ Implements the v2 design decisions worked out in planning:
   empty (stays in place — the stack does not shrink from clearing).
 - Row fills with an invalid word -> LOCKS (grayed out, no longer
     usable — including immune to shifts from below).
+- A valid word submitted beside locked cells -> UNLOCKS contiguous locked
+    cells directly beside that word.
 - If the stack reaches the top of the play area, you don't lose
   immediately: a RECURRING grace period starts. Clearing any row
   while in the grace period resets the timer. Let it expire -> Game
@@ -57,9 +59,9 @@ ROW_LEN = 7                 # blocks per row; submitted words may use 1-7 blocks
 CELL = 64                   # cell size in px
 CELL_GAP = 6
 BOARD_LEFT = (SCREEN_W - (ROW_LEN * CELL + (ROW_LEN - 1) * CELL_GAP)) // 2
-BOARD_BOTTOM_Y = 620         # y-coordinate of the bottom of the lowest row (row index 0)
+BOARD_BOTTOM_Y = 660         # y-coordinate of the bottom of the lowest row (row index 0)
 
-BUFFER_LINE_Y = 90          # if the top of the stack rises above this line, danger
+BUFFER_LINE_Y = 106         # top edge of the row that starts the grace period
 SPAWN_Y = 20                 # falling letters spawn just below the top edge
 
 MAX_FALLING = 15
@@ -76,6 +78,8 @@ ROW_FLICKER_MS = 200
 SCORE_POPUP_MS = 900
 SCORE_POPUP_INTRO_MS = 500
 BINGO_BONUS_MULTIPLIER = 2
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_PATH = os.path.join(PROJECT_DIR, "FiraMono-Regular.ttf")
 
 # Colors
 BG = (18, 18, 24)
@@ -114,8 +118,10 @@ LETTER_POINT_COLORS = {
 }
 
 # Runtime datasets: merged vocabulary tiers and Scrabble letter values.
-DATASET = pd.read_csv("merged.csv")
-LETTER_POINTS_DATASET = pd.read_csv("scrabble_letter_points.csv")
+DATASET = pd.read_csv(os.path.join(PROJECT_DIR, "merged.csv"))
+LETTER_POINTS_DATASET = pd.read_csv(
+    os.path.join(PROJECT_DIR, "scrabble_letter_points.csv")
+)
 
 WORD_TIERS = {
     str(word).strip().lower(): int(tier)
@@ -364,13 +370,19 @@ class Board:
         self.falling = still_falling
         self.separate_falling_letters()
 
-        # Grace period handling
+        self.update_grace_period(now, top_y)
+
+    def update_grace_period(self, now, top_y=None):
+        """Start, reset, or end the grace period from the current stack height."""
+        if top_y is None:
+            top_y = self.stack_top_y()
         in_danger = top_y <= BUFFER_LINE_Y
         if in_danger and not self.grace_active:
             self.grace_active = True
             self.grace_end = now + GRACE_PERIOD_MS
-        elif not in_danger:
+        elif not in_danger and self.grace_active:
             self.grace_active = False
+            self.grace_end = 0
 
         if self.grace_active and now >= self.grace_end:
             self.game_over = True
@@ -418,12 +430,25 @@ class Board:
                 row.cells[col] = None
                 row.hole_cols.add(col)
             row.scored_cols.update(range(start, end + 1))
+            self.unlock_adjacent_locked_cells(row, start, end)
             self.on_row_cleared(now)
             if len(row.scored_cols) == ROW_LEN:
                 row.hole_cols.clear()
                 self.rows.remove(row)
         else:
             row.locked_cols.update(range(start, end + 1))
+
+    def unlock_adjacent_locked_cells(self, row, start, end):
+        """Unlock contiguous locked cells directly beside a valid word."""
+        left = start - 1
+        while left >= 0 and left in row.locked_cols:
+            row.locked_cols.remove(left)
+            left -= 1
+
+        right = end + 1
+        while right < ROW_LEN and right in row.locked_cols:
+            row.locked_cols.remove(right)
+            right += 1
 
     # -- word checking -------------------------------------------------
 
@@ -451,9 +476,11 @@ class Game:
         pygame.display.set_caption("Letter Rise — Demo v2")
         self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("consolas", 30, bold=True)
-        self.small_font = pygame.font.SysFont("consolas", 18)
-        self.big_font = pygame.font.SysFont("consolas", 46, bold=True)
+        self.font = pygame.font.Font(FONT_PATH, 30)
+        self.font.set_bold(True)
+        self.small_font = pygame.font.Font(FONT_PATH, 18)
+        self.big_font = pygame.font.Font(FONT_PATH, 46)
+        self.big_font.set_bold(True)
         self.reset()
 
     def reset(self):
@@ -763,6 +790,15 @@ class Game:
 
         score_txt = self.font.render(f"Score: {board.score:.2f}", True, TEXT_COLOR)
         self.screen.blit(score_txt, (16, 16))
+
+        if board.grace_active and not board.game_over:
+            grace_left = max(0, board.grace_end - now)
+            grace_txt = self.small_font.render(
+                f"GRACE: {grace_left / 1000:.1f}s",
+                True,
+                GRACE_COLOR,
+            )
+            self.screen.blit(grace_txt, (16, 50))
 
         if board.game_over:
             go_txt = self.big_font.render("GAME OVER", True, (240, 90, 90))
