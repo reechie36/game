@@ -171,7 +171,42 @@ letters use a lighter version of their assigned color.
 
 ## Current status
 
-This is a standalone quick demo of the Letter Rise game concept. It has no save system, sound effects, menus, multiplayer mode, or persistent high-score table. Game progress exists only while the program is running.
+This is a standalone quick demo of the Letter Rise game concept. It now includes a local menu, display-name settings, and an optional Supabase global leaderboard. Game progress exists only while the program is running.
+
+## Global leaderboard setup
+
+The game uses anonymous REST requests and never asks for a password. Set these
+environment variables before starting the game:
+
+```powershell
+$env:SUPABASE_URL = "https://your-project.supabase.co"
+$env:SUPABASE_ANON_KEY = "your-anon-key"
+python main.py
+```
+
+Run [supabase_leaderboard.sql](supabase_leaderboard.sql) in the Supabase SQL
+editor. It creates the `leaderboard` table, anonymous RLS policies, and the
+`get_leaderboard` rank function used by the game. The essential table shape is:
+
+```sql
+create table public.leaderboard (
+	id uuid primary key default gen_random_uuid(),
+	player_name text not null check (char_length(player_name) between 1 and 16),
+	score numeric not null,
+	rarest_word_found text not null,
+	client_id uuid not null,
+	created_at timestamptz not null default now()
+);
+```
+
+The client expects an RPC named `get_leaderboard` that returns the top 100 rows
+plus the requesting player's row when they are outside the top 100. Each row
+should contain `rank`, `player_name`, `score`, `rarest_word_found`, and
+`is_me`. The RPC can use `requested_client_id` and `result_limit` arguments.
+Enable Row Level Security and permit anonymous `select` and `insert` only for
+this table; validate public display names in the database as well as in the
+client. If the variables are missing or the request fails, the game continues
+offline and shows a quiet leaderboard error.
 
 ## Function pseudocode
 
