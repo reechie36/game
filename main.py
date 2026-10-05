@@ -45,6 +45,12 @@ import os
 import random
 import sys
 import math
+import json
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
 import pygame
 import pandas as pd
 
@@ -92,6 +98,10 @@ SOUND_PATHS = {
     "warning": os.path.join(SOUNDS_DIR, "UI", "synth_warning.wav"),
     "game_over": os.path.join(SOUNDS_DIR, "Retro", "lose.wav"),
 }
+PROFILE_PATH = os.path.join(PROJECT_DIR, "player_profile.json")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+LEADERBOARD_LIMIT = 100
 
 # Colors
 BG = (18, 18, 24)
@@ -219,6 +229,116 @@ def tier_color(tier):
     return TIER_COLORS[tier]
 
 
+class LeaderboardClient:
+    """Small REST client that keeps network failures out of the game loop."""
+
+    def __init__(self):
+        self.profile = self.load_profile()
+        self.rows = []
+        self.rank = None
+        self.error = None
+        self.loading = False
+
+    @staticmethod
+    def load_profile():
+        try:
+            with open(PROFILE_PATH, "r", encoding="utf-8") as profile_file:
+                profile = json.load(profile_file)
+        except (OSError, ValueError):
+            profile = {}
+        profile.setdefault("client_id", str(uuid.uuid4()))
+        profile.setdefault("player_name", "")
+        profile.setdefault("public", True)
+        profile.setdefault("personal_best", 0)
+        return profile
+
+    def save_profile(self):
+        try:
+            with open(PROFILE_PATH, "w", encoding="utf-8") as profile_file:
+                json.dump(self.profile, profile_file, indent=2)
+        except OSError:
+            pass
+
+    def configured(self):
+        return bool(SUPABASE_URL and SUPABASE_ANON_KEY)
+
+    def request(self, path, method="GET", payload=None):
+        if not self.configured():
+            raise RuntimeError("Supabase is not configured")
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            f"{SUPABASE_URL}{path}",
+            data=body,
+            method=method,
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def submit_and_refresh(self, score, rarest_word):
+        try:
+            if not self.profile["public"]:
+                self.error = "Global sharing is off in Settings"
+                return
+            self.request(
+                "/rest/v1/leaderboard",
+                "POST",
+                {
+                    "player_name": self.profile["player_name"],
+                    "score": round(score, 2),
+                    "rarest_word_found": rarest_word or "-",
+                    "client_id": self.profile["client_id"],
+                },
+            )
+            result = self.request(
+                "/rpc/get_leaderboard",
+                "POST",
+                {"requested_client_id": self.profile["client_id"], "result_limit": LEADERBOARD_LIMIT},
+            )
+            self.rows = result.get("rows", result) if isinstance(result, dict) else result
+            self.rank = next(
+                (row.get("rank") for row in self.rows if row.get("is_me")),
+                None,
+            )
+            self.error = None
+        except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+            self.error = "Couldn't reach leaderboard"
+            print(f"Leaderboard unavailable: {exc}")
+        finally:
+            self.loading = False
+
+    def refresh_async(self):
+        if self.loading:
+            return
+        self.loading = True
+        self.error = None
+        threading.Thread(target=self._refresh, daemon=True).start()
+
+    def _refresh(self):
+        try:
+            result = self.request(
+                "/rpc/get_leaderboard",
+                "POST",
+                {"requested_client_id": self.profile["client_id"], "result_limit": LEADERBOARD_LIMIT},
+            )
+            self.rows = result.get("rows", result) if isinstance(result, dict) else result
+            self.rank = next(
+                (row.get("rank") for row in self.rows if row.get("is_me")),
+                None,
+            )
+            self.error = None
+        except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+            self.error = "Couldn't reach leaderboard"
+            print(f"Leaderboard unavailable: {exc}")
+        finally:
+            self.loading = False
+
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -283,6 +403,7 @@ class Board:
         self.grace_end = 0
         self.game_over = False
         self.score_popups = []
+        self.rarest_word_found = ""
 
     # -- geometry -----------------------------------------------------
 
@@ -431,6 +552,8 @@ class Board:
             if bingo:
                 points *= BINGO_BONUS_MULTIPLIER
             self.score += points
+            if tier > WORD_TIERS.get(self.rarest_word_found, 0):
+                self.rarest_word_found = word
             row_index = self.rows.index(row)
             self.score_popups.append(ScorePopup(
                 base_points,
@@ -510,11 +633,25 @@ class Game:
         self.small_font = pygame.font.Font(FONT_PATH, 18)
         self.big_font = pygame.font.Font(FONT_PATH, 46)
         self.big_font.set_bold(True)
+        self.title_font = pygame.font.Font(FONT_PATH, 58)
+        self.title_font.set_bold(True)
+        self.leaderboard = LeaderboardClient()
+        self.state = "menu"
+        self.name_input = self.leaderboard.profile["player_name"]
+        self.name_cursor = True
+        self.name_prompt = False
+        self.name_entry_return = "game_over"
+        self.submission_started = False
+        self.new_personal_best = False
         self.reset()
+        self.state = "menu"
 
     def reset(self):
         self.board = Board()
         self.dragging = None  # the FallingLetter currently being dragged
+        self.submission_started = False
+        self.name_prompt = False
+        self.state = "playing"
 
     def play_sound(self, name):
         sound = self.sounds.get(name)
@@ -525,6 +662,114 @@ class Game:
         for event in self.board.sound_events:
             self.play_sound(event)
         self.board.sound_events.clear()
+
+    def button_rect(self, index, width=300, height=54):
+        return pygame.Rect(
+            (SCREEN_W - width) // 2,
+            250 + index * (height + 16),
+            width,
+            height,
+        )
+
+    def clean_name(self, name):
+        blocked = {"fuck", "shit", "bitch", "cunt", "nigger", "faggot"}
+        cleaned = " ".join(name.strip().split())[:16]
+        if not cleaned or any(word in cleaned.lower() for word in blocked):
+            return ""
+        return cleaned
+
+    def save_name(self):
+        cleaned = self.clean_name(self.name_input)
+        if not cleaned:
+            return False
+        self.name_input = cleaned
+        self.leaderboard.profile["player_name"] = cleaned
+        self.leaderboard.save_profile()
+        return True
+
+    def start_submission(self):
+        if self.submission_started or not self.leaderboard.profile["player_name"]:
+            return
+        self.submission_started = True
+        self.new_personal_best = self.board.score > self.leaderboard.profile["personal_best"]
+        if self.new_personal_best:
+            self.leaderboard.profile["personal_best"] = round(self.board.score, 2)
+            self.leaderboard.save_profile()
+        self.leaderboard.loading = True
+        threading.Thread(
+            target=self.leaderboard.submit_and_refresh,
+            args=(self.board.score, self.board.rarest_word_found),
+            daemon=True,
+        ).start()
+
+    def open_leaderboard(self):
+        self.state = "leaderboard"
+        self.leaderboard.refresh_async()
+
+    def draw_button(self, rect, label, active=False):
+        color = (72, 72, 86) if active else (45, 45, 58)
+        pygame.draw.rect(self.screen, color, rect, border_radius=8)
+        pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=8)
+        text = self.font.render(label, True, TEXT_COLOR)
+        self.screen.blit(text, text.get_rect(center=rect.center))
+
+    def draw_menu(self):
+        self.screen.fill(BG)
+        title = self.title_font.render("LETTER RISE", True, FALLING_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 140)))
+        for index, label in enumerate(("PLAY", "LEADERBOARD", "SETTINGS", "QUIT")):
+            self.draw_button(self.button_rect(index), label)
+
+    def draw_name_prompt(self):
+        self.screen.fill(BG)
+        title = self.big_font.render("Choose a display name", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 190)))
+        pygame.draw.rect(self.screen, CELL_EMPTY, (130, 270, 560, 62), border_radius=6)
+        pygame.draw.rect(self.screen, FALLING_COLOR, (130, 270, 560, 62), 2, border_radius=6)
+        shown_name = self.name_input + ("|" if self.name_cursor else "")
+        name_text = self.font.render(shown_name, True, TEXT_COLOR)
+        self.screen.blit(name_text, (150, 285))
+        hint = self.small_font.render("Enter to continue  |  Esc to cancel", True, TEXT_COLOR)
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, 390)))
+        warning = self.small_font.render("1-16 characters; public display name", True, GRACE_COLOR)
+        self.screen.blit(warning, warning.get_rect(center=(SCREEN_W // 2, 430)))
+
+    def draw_settings(self):
+        self.screen.fill(BG)
+        title = self.big_font.render("SETTINGS", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 125)))
+        name_text = self.font.render(f"Name: {self.leaderboard.profile['player_name'] or '(not set)'}", True, TEXT_COLOR)
+        self.screen.blit(name_text, (90, 220))
+        privacy = "ON" if self.leaderboard.profile["public"] else "OFF"
+        self.draw_button(pygame.Rect(90, 285, 640, 54), f"GLOBAL SCORES: {privacy}")
+        self.draw_button(pygame.Rect(90, 365, 640, 54), "EDIT DISPLAY NAME")
+        self.draw_button(pygame.Rect(90, 445, 640, 54), "BACK")
+
+    def draw_leaderboard(self):
+        self.screen.fill(BG)
+        title = self.big_font.render("GLOBAL LEADERBOARD", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 62)))
+        if self.leaderboard.loading:
+            loading = self.font.render("Loading...", True, FALLING_COLOR)
+            self.screen.blit(loading, loading.get_rect(center=(SCREEN_W // 2, 180)))
+        elif self.leaderboard.error:
+            error = self.small_font.render(self.leaderboard.error, True, GRACE_COLOR)
+            self.screen.blit(error, error.get_rect(center=(SCREEN_W // 2, 180)))
+        else:
+            header = self.small_font.render("RANK       PLAYER                 SCORE       WORD", True, GRID_LINE)
+            self.screen.blit(header, (60, 120))
+            for index, row in enumerate(self.leaderboard.rows[:18]):
+                y = 155 + index * 28
+                if row.get("is_me"):
+                    pygame.draw.rect(self.screen, (75, 65, 35), (45, y - 3, 730, 27), border_radius=4)
+                rank = row.get("rank", index + 1)
+                player = str(row.get("player_name", "Unknown"))[:16]
+                score = float(row.get("score", 0))
+                word = str(row.get("rarest_word_found", "-"))[:10]
+                line = self.small_font.render(f"#{rank:<7} {player:<18} {score:>8.2f}   {word}", True, TEXT_COLOR)
+                self.screen.blit(line, (60, y))
+        back = pygame.Rect(260, 700, 300, 52)
+        self.draw_button(back, "BACK")
 
     # -- hit testing -----------------------------------------------------
 
@@ -600,8 +845,8 @@ class Game:
                 fl.dragging = True
                 fl.origin = "grid"
                 self.dragging = fl
-                self.play_sound("pickup")
                 self.board.falling.append(fl)
+                self.play_sound("pickup")
             return
 
     def handle_mousemove(self, pos):
@@ -665,6 +910,22 @@ class Game:
     # -- render -----------------------------------------------------------
 
     def draw(self):
+        if self.state == "menu":
+            self.draw_menu()
+            pygame.display.flip()
+            return
+        if self.state == "leaderboard":
+            self.draw_leaderboard()
+            pygame.display.flip()
+            return
+        if self.state == "settings":
+            self.draw_settings()
+            pygame.display.flip()
+            return
+        if self.state == "name_entry":
+            self.draw_name_prompt()
+            pygame.display.flip()
+            return
         self.screen.fill(BG)
         board = self.board
 
@@ -848,8 +1109,31 @@ class Game:
             self.screen.blit(go_txt, go_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 30)))
             sc_txt = self.font.render(f"Final score: {board.score:.2f}", True, TEXT_COLOR)
             self.screen.blit(sc_txt, sc_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 20)))
-            r_txt = self.small_font.render("Press R to restart, ESC to quit", True, TEXT_COLOR)
-            self.screen.blit(r_txt, r_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 60)))
+            if self.leaderboard.rank is not None:
+                rank_txt = self.font.render(f"Global rank: #{self.leaderboard.rank}", True, FALLING_COLOR)
+                self.screen.blit(rank_txt, rank_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 62)))
+            elif self.leaderboard.error:
+                error_txt = self.small_font.render(self.leaderboard.error, True, GRACE_COLOR)
+                self.screen.blit(error_txt, error_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 62)))
+            if self.new_personal_best:
+                best_txt = self.small_font.render("NEW PERSONAL BEST", True, SCORE_POPUP_COLOR)
+                self.screen.blit(best_txt, best_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 125)))
+            r_txt = self.small_font.render("L: leaderboard   R: restart   M: menu", True, TEXT_COLOR)
+            self.screen.blit(r_txt, r_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 95)))
+
+            if self.name_prompt:
+                panel = pygame.Surface((620, 250), pygame.SRCALPHA)
+                panel.fill((18, 18, 24, 245))
+                self.screen.blit(panel, (100, 245))
+                prompt = self.big_font.render("DISPLAY NAME", True, TEXT_COLOR)
+                self.screen.blit(prompt, prompt.get_rect(center=(SCREEN_W // 2, 285)))
+                pygame.draw.rect(self.screen, CELL_EMPTY, (150, 330, 520, 52), border_radius=6)
+                pygame.draw.rect(self.screen, FALLING_COLOR, (150, 330, 520, 52), 2, border_radius=6)
+                shown_name = self.name_input + ("|" if self.name_cursor else "")
+                name_text = self.font.render(shown_name, True, TEXT_COLOR)
+                self.screen.blit(name_text, (170, 340))
+                hint = self.small_font.render("Enter to submit  |  Esc to stay offline", True, TEXT_COLOR)
+                self.screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, 410)))
 
         pygame.display.flip()
 
@@ -865,19 +1149,78 @@ class Game:
                     running = False
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        running = False
-                    elif event.key == pygame.K_r and self.board.game_over:
+                        if self.name_prompt:
+                            self.name_prompt = False
+                            if self.state == "name_entry":
+                                self.state = self.name_entry_return
+                        elif self.state in ("leaderboard", "settings"):
+                            self.state = "menu"
+                        elif self.state == "game_over":
+                            self.state = "menu"
+                        else:
+                            running = False
+                    elif self.name_prompt and event.key == pygame.K_RETURN:
+                        if self.save_name():
+                            self.name_prompt = False
+                            if self.name_entry_return == "settings":
+                                self.state = "settings"
+                            else:
+                                self.start_submission()
+                    elif self.name_prompt and event.key == pygame.K_BACKSPACE:
+                        self.name_input = self.name_input[:-1]
+                    elif self.name_prompt and event.unicode.isprintable():
+                        self.name_input = (self.name_input + event.unicode)[:16]
+                    elif event.key == pygame.K_r and self.state == "game_over":
                         self.reset()
-                    elif event.key == pygame.K_SPACE:
+                    elif event.key == pygame.K_l and self.state == "game_over":
+                        self.open_leaderboard()
+                    elif event.key == pygame.K_m and self.state == "game_over":
+                        self.state = "menu"
+                    elif event.key == pygame.K_SPACE and self.state == "playing":
                         self.confirm_hovered_segment()
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    self.handle_mousedown(event.pos)
+                    if self.state == "menu":
+                        if self.button_rect(0).collidepoint(event.pos):
+                            self.reset()
+                        elif self.button_rect(1).collidepoint(event.pos):
+                            self.open_leaderboard()
+                        elif self.button_rect(2).collidepoint(event.pos):
+                            self.state = "settings"
+                        elif self.button_rect(3).collidepoint(event.pos):
+                            running = False
+                    elif self.state == "leaderboard" and pygame.Rect(260, 700, 300, 52).collidepoint(event.pos):
+                        self.state = "menu"
+                    elif self.state == "settings":
+                        if pygame.Rect(90, 285, 640, 54).collidepoint(event.pos):
+                            self.leaderboard.profile["public"] = not self.leaderboard.profile["public"]
+                            self.leaderboard.save_profile()
+                        elif pygame.Rect(90, 365, 640, 54).collidepoint(event.pos):
+                            self.name_input = self.leaderboard.profile["player_name"]
+                            self.name_prompt = True
+                            self.name_entry_return = "settings"
+                            self.state = "name_entry"
+                        elif pygame.Rect(90, 445, 640, 54).collidepoint(event.pos):
+                            self.state = "menu"
+                    elif self.state == "playing":
+                        self.handle_mousedown(event.pos)
                 elif event.type == pygame.MOUSEMOTION:
-                    self.handle_mousemove(event.pos)
+                    if self.state == "playing":
+                        self.handle_mousemove(event.pos)
                 elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                    self.handle_mouseup(event.pos)
+                    if self.state == "playing":
+                        self.handle_mouseup(event.pos)
 
-            self.board.update(dt, now)
+            was_game_over = self.board.game_over
+            if self.state == "playing":
+                self.board.update(dt, now)
+            if self.board.game_over and not was_game_over:
+                self.state = "game_over"
+                if self.leaderboard.profile["player_name"]:
+                    self.start_submission()
+                else:
+                    self.name_prompt = True
+            if self.state == "game_over" and self.leaderboard.profile["player_name"]:
+                self.start_submission()
             self.play_board_sounds()
             self.draw()
 
