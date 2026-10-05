@@ -15,7 +15,7 @@ Create and activate a virtual environment, then install the dependencies:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install pygame-ce pandas
+pip install pygame-ce pandas supabase python-dotenv
 ```
 
 On Windows, activate the environment with:
@@ -175,14 +175,17 @@ This is a standalone quick demo of the Letter Rise game concept. It now includes
 
 ## Global leaderboard setup
 
-The game uses anonymous REST requests and never asks for a password. Set these
-environment variables before starting the game:
+The game uses the Supabase Python client with the anonymous public key and
+never asks for a password. Copy `.env.example` to `.env` and fill in the
+project URL and anonymous key:
 
-```powershell
-$env:SUPABASE_URL = "https://your-project.supabase.co"
-$env:SUPABASE_ANON_KEY = "your-anon-key"
-python main.py
+```bash
+cp .env.example .env
+.venv/bin/python main.py
 ```
+
+`.env` is ignored by Git. Never put a Supabase service-role key in this file
+or in the client; use only the project URL and anonymous key.
 
 Run [supabase_leaderboard.sql](supabase_leaderboard.sql) in the Supabase SQL
 editor. It creates the `leaderboard` table, anonymous RLS policies, and the

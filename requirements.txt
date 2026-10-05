@@ -1,0 +1,4 @@
+pygame-ce
+pandas
+supabase
+python-dotenv

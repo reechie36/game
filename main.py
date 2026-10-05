@@ -47,12 +47,12 @@ import sys
 import math
 import json
 import threading
-import urllib.error
-import urllib.parse
-import urllib.request
 import uuid
 import pygame
 import pandas as pd
+from dotenv import load_dotenv
+from postgrest.exceptions import APIError
+from supabase import create_client
 
 # ---------------------------------------------------------------------------
 # Config
@@ -85,6 +85,7 @@ SCORE_POPUP_MS = 900
 SCORE_POPUP_INTRO_MS = 500
 BINGO_BONUS_MULTIPLIER = 2
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(PROJECT_DIR, ".env"), override=True)
 FONT_PATH = os.path.join(PROJECT_DIR, "FiraMono-Regular.ttf")
 SOUNDS_DIR = os.path.join(PROJECT_DIR, "source_data", "sounds")
 SOUND_PATHS = {
@@ -100,7 +101,11 @@ SOUND_PATHS = {
 }
 PROFILE_PATH = os.path.join(PROJECT_DIR, "player_profile.json")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_ANON_KEY = (
+    os.environ.get("SUPABASE_ANON_KEY")
+    or os.environ.get("SUPABASE_KEY")
+    or os.environ.get("SUPABASE_TOKEN", "")
+)
 LEADERBOARD_LIMIT = 100
 
 # Colors
@@ -230,7 +235,7 @@ def tier_color(tier):
 
 
 class LeaderboardClient:
-    """Small REST client that keeps network failures out of the game loop."""
+    """Supabase client that keeps network failures out of the game loop."""
 
     def __init__(self):
         self.profile = self.load_profile()
@@ -238,6 +243,13 @@ class LeaderboardClient:
         self.rank = None
         self.error = None
         self.loading = False
+        self.client = None
+        if self.configured():
+            try:
+                self.client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+            except (TypeError, ValueError) as exc:
+                self.error = "Invalid Supabase configuration"
+                print(f"Supabase unavailable: {exc}")
 
     @staticmethod
     def load_profile():
@@ -262,51 +274,41 @@ class LeaderboardClient:
     def configured(self):
         return bool(SUPABASE_URL and SUPABASE_ANON_KEY)
 
-    def request(self, path, method="GET", payload=None):
-        if not self.configured():
+    def fetch_leaderboard(self):
+        if self.client is None:
             raise RuntimeError("Supabase is not configured")
-        body = None if payload is None else json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            f"{SUPABASE_URL}{path}",
-            data=body,
-            method=method,
-            headers={
-                "apikey": SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-                "Content-Type": "application/json",
-                "Prefer": "return=representation",
+        response = self.client.rpc(
+            "get_leaderboard",
+            {
+                "requested_client_id": self.profile["client_id"],
+                "result_limit": LEADERBOARD_LIMIT,
             },
-        )
-        with urllib.request.urlopen(request, timeout=8) as response:
-            return json.loads(response.read().decode("utf-8"))
+        ).execute()
+        result = response.data
+        return result.get("rows", result) if isinstance(result, dict) else result
 
     def submit_and_refresh(self, score, rarest_word):
         try:
             if not self.profile["public"]:
                 self.error = "Global sharing is off in Settings"
                 return
-            self.request(
-                "/rest/v1/leaderboard",
-                "POST",
+            if self.client is None:
+                raise RuntimeError("Supabase is not configured")
+            self.client.table("leaderboard").insert(
                 {
                     "player_name": self.profile["player_name"],
                     "score": round(score, 2),
                     "rarest_word_found": rarest_word or "-",
                     "client_id": self.profile["client_id"],
                 },
-            )
-            result = self.request(
-                "/rpc/get_leaderboard",
-                "POST",
-                {"requested_client_id": self.profile["client_id"], "result_limit": LEADERBOARD_LIMIT},
-            )
-            self.rows = result.get("rows", result) if isinstance(result, dict) else result
+            ).execute()
+            self.rows = self.fetch_leaderboard()
             self.rank = next(
                 (row.get("rank") for row in self.rows if row.get("is_me")),
                 None,
             )
             self.error = None
-        except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+        except (APIError, OSError, RuntimeError, TypeError, ValueError) as exc:
             self.error = "Couldn't reach leaderboard"
             print(f"Leaderboard unavailable: {exc}")
         finally:
@@ -321,18 +323,13 @@ class LeaderboardClient:
 
     def _refresh(self):
         try:
-            result = self.request(
-                "/rpc/get_leaderboard",
-                "POST",
-                {"requested_client_id": self.profile["client_id"], "result_limit": LEADERBOARD_LIMIT},
-            )
-            self.rows = result.get("rows", result) if isinstance(result, dict) else result
+            self.rows = self.fetch_leaderboard()
             self.rank = next(
                 (row.get("rank") for row in self.rows if row.get("is_me")),
                 None,
             )
             self.error = None
-        except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+        except (APIError, OSError, RuntimeError, TypeError, ValueError) as exc:
             self.error = "Couldn't reach leaderboard"
             print(f"Leaderboard unavailable: {exc}")
         finally:
