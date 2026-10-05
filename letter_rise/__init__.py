@@ -1,0 +1,1 @@
+"""Letter Rise game package."""

@@ -145,7 +145,13 @@ by `main.py`.
 
 ## Project files
 
-- `main.py`: pygame game, game state, input handling, rendering, and scoring
+- `main.py`: stable launcher (`python main.py`)
+- `letter_rise/config.py`: display, gameplay, audio, and Supabase configuration
+- `letter_rise/data.py`: vocabulary loading, scoring, and letter-color helpers
+- `letter_rise/leaderboard.py`: local profile and optional Supabase leaderboard client
+- `letter_rise/models.py`: row, falling-letter, and score-popup data models
+- `letter_rise/board.py`: board state, falling-letter updates, and word resolution
+- `letter_rise/game.py`: pygame window, input handling, rendering, and main loop
 - `merged.csv`: runtime word list, frequencies, and rarity tiers
 - `scrabble_letter_points.csv`: Scrabble letter values
 - `source_data/`: source word-frequency data and the data-cleaning notebook
