@@ -1,0 +1,14 @@
+{
+  "name": "letter-rise",
+  "version": "1.0.0",
+  "description": "Letter Rise - Word puzzle game (Web & Python)",
+  "type": "module",
+  "scripts": {
+    "dev": "node web/tools/dev_server.mjs",
+    "build": "node web/tools/generate_env.mjs",
+    "test": "node web/tools/test_parity.mjs",
+    "start": "node web/tools/dev_server.mjs"
+  },
+  "keywords": ["game", "word-game", "canvas", "web-audio", "pygame"],
+  "license": "MIT"
+}

@@ -1,8 +1,34 @@
 # Letter Rise
 
-Letter Rise is a pygame word-building game demo. Letters fall from the top of the screen, and the player drags them into a growing stack of seven-block rows. Hover over a contiguous run of filled blocks and press Space to submit a word of one to seven letters. Complete valid words to clear runs and earn points before the stack reaches the danger line.
+Letter Rise is a word-building puzzle game available for both the **Web (Canvas 2D / Mobile)** and **Desktop (Python / Pygame)**. Letters fall from the top of the screen, and the player drags them into a growing stack of seven-block rows. Complete valid words to score points and unlock locked blocks before the rising stack reaches the danger line.
 
-## Requirements
+---
+
+## 🌐 Web Edition (Play in Browser)
+
+The Web Edition is written in pure vanilla ES modules, HTML5 Canvas 2D, and Web Audio API with zero build dependencies, touch controls, and responsive scaling.
+
+### Quick Start (Web)
+
+```bash
+# Start local dev server
+npm run dev
+
+# Or with Python
+python3 -m http.server 8080
+```
+
+Open **[http://localhost:8080](http://localhost:8080)** in any modern browser.
+
+### Deploying to Vercel
+See the complete deployment guide in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+- Connect your GitHub repository to [Vercel](https://vercel.com).
+- Vercel automatically detects [`vercel.json`](vercel.json) and deploys instantly.
+- Optionally add `SUPABASE_URL` and `SUPABASE_ANON_KEY` to enable the global leaderboard.
+
+---
+
+## 🐍 Desktop Edition (Python / Pygame)
 
 - Python 3.11 or newer
 - `pygame-ce` (the pygame package is also compatible with the current code)

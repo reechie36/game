@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Letter Rise</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-container">
+    <div id="game-wrapper">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- In-game Action HUD -->
+      <button id="pause-btn-hud" class="pause-btn-hud" style="display: none;">PAUSE (P)</button>
+      <div id="action-bar" style="display: none;">
+        <button id="confirm-btn" class="confirm-btn">SPACE TO CONFIRM</button>
+      </div>
+
+      <!-- Menu Overlay -->
+      <div id="menu-overlay" class="overlay">
+        <div class="overlay-panel">
+          <h1 class="title-large">LETTER RISE</h1>
+          <div class="btn-group">
+            <button id="btn-menu-play" class="menu-btn primary">PLAY</button>
+            <button id="btn-menu-leaderboard" class="menu-btn">LEADERBOARD</button>
+            <button id="btn-menu-settings" class="menu-btn">SETTINGS</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Name Entry Overlay -->
+      <div id="name-overlay" class="overlay hidden">
+        <div class="overlay-panel">
+          <h2 class="title-large" style="font-size: 26px;">Choose Display Name</h2>
+          <form id="name-form" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            <input
+              id="player-name-input"
+              class="input-field"
+              type="text"
+              maxlength="16"
+              placeholder="Your Name"
+              required
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p class="hint-text">1–16 characters; public display name</p>
+            <div class="btn-group">
+              <button type="submit" class="menu-btn primary">CONTINUE</button>
+              <button id="btn-name-cancel" type="button" class="menu-btn">CANCEL</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Settings Overlay -->
+      <div id="settings-overlay" class="overlay hidden">
+        <div class="overlay-panel">
+          <h2 class="title-large">SETTINGS</h2>
+          <p id="settings-name-display" class="subtitle" style="color: var(--accent-gold);"></p>
+          <div class="btn-group">
+            <button id="btn-settings-edit-name" class="menu-btn">EDIT DISPLAY NAME</button>
+            <button id="btn-settings-public" class="menu-btn">GLOBAL SCORES: ON</button>
+            <div class="setting-row">
+              <div class="volume-container">
+                <span id="volume-label" style="font-size: 14px; min-width: 90px;">SOUND: 75%</span>
+                <input id="volume-slider" class="volume-slider" type="range" min="0" max="1" step="0.05" value="0.75" />
+              </div>
+            </div>
+            <button id="btn-settings-mute" class="menu-btn">MUTE SOUND</button>
+            <button id="btn-settings-back" class="menu-btn primary" style="margin-top: 10px;">BACK</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leaderboard Overlay -->
+      <div id="leaderboard-overlay" class="overlay hidden">
+        <div class="overlay-panel" style="max-width: 680px;">
+          <h2 class="title-large" style="font-size: 28px; margin-bottom: 16px;">GLOBAL LEADERBOARD</h2>
+          <div class="leaderboard-table-container">
+            <div id="leaderboard-status" class="loading-text">Loading...</div>
+            <table id="leaderboard-table" class="leaderboard-table" style="display: none;">
+              <thead>
+                <tr>
+                  <th>RANK</th>
+                  <th>PLAYER</th>
+                  <th>SCORE</th>
+                  <th>RAREST WORD</th>
+                  <th>WORD PTS</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-body"></tbody>
+            </table>
+          </div>
+          <button id="btn-leaderboard-back" class="menu-btn primary" style="max-width: 280px;">BACK</button>
+        </div>
+      </div>
+
+      <!-- Pause Overlay -->
+      <div id="pause-overlay" class="overlay hidden">
+        <div class="overlay-panel">
+          <h2 class="title-large">PAUSED</h2>
+          <p class="subtitle" style="font-size: 15px; color: #aaa; margin-bottom: 24px;">Press P to resume</p>
+          <div class="btn-group">
+            <button id="btn-pause-resume" class="menu-btn primary">RESUME</button>
+            <button id="btn-pause-restart" class="menu-btn">RESTART</button>
+            <button id="btn-pause-menu" class="menu-btn">MAIN MENU</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game Over Overlay -->
+      <div id="gameover-overlay" class="overlay hidden">
+        <div class="overlay-panel">
+          <h2 class="title-large" style="color: var(--danger-color);">GAME OVER</h2>
+          <p id="gameover-score" class="subtitle" style="font-size: 24px; margin-bottom: 8px;">Final Score: 0.00</p>
+          <p id="gameover-best" class="subtitle" style="font-size: 16px; color: var(--accent-gold); display: none;">NEW PERSONAL BEST!</p>
+          <p id="gameover-rank" class="hint-text" style="font-size: 16px; color: var(--accent-gold); margin-bottom: 20px;"></p>
+          <div class="btn-group">
+            <button id="btn-gameover-restart" class="menu-btn primary">PLAY AGAIN (R)</button>
+            <button id="btn-gameover-leaderboard" class="menu-btn">LEADERBOARD (L)</button>
+            <button id="btn-gameover-menu" class="menu-btn">MAIN MENU (M)</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="env.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

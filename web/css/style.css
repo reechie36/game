@@ -1,0 +1,320 @@
+@font-face {
+  font-family: 'Fira Mono';
+  src: url('/assets/fonts/FiraMono-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bg-color: rgb(18, 18, 24);
+  --text-color: rgb(235, 235, 240);
+  --accent-gold: rgb(230, 190, 90);
+  --accent-gold-hover: rgb(255, 220, 130);
+  --grid-line: rgb(60, 60, 72);
+  --cell-empty: rgb(32, 32, 42);
+  --danger-color: rgb(220, 90, 90);
+  --btn-bg: rgb(45, 45, 58);
+  --btn-bg-hover: rgb(72, 72, 86);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Fira Mono', monospace;
+  touch-action: none;
+}
+
+#app-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--bg-color);
+}
+
+#game-wrapper {
+  position: relative;
+  width: 820px;
+  height: 820px;
+  max-width: 100vw;
+  max-height: 100vh;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+
+#game-canvas:active {
+  cursor: grabbing;
+}
+
+/* Floating on-screen confirm action bar for mobile & desktop */
+#action-bar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.confirm-btn {
+  background: var(--btn-bg);
+  border: 2px solid var(--grid-line);
+  color: var(--text-color);
+  font-family: 'Fira Mono', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-btn.active {
+  background: rgb(55, 65, 45);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  box-shadow: 0 0 16px rgba(230, 190, 90, 0.4);
+  transform: scale(1.04);
+}
+
+.confirm-btn:active {
+  transform: scale(0.97);
+}
+
+.pause-btn-hud {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(45, 45, 58, 0.7);
+  border: 1px solid var(--grid-line);
+  color: var(--text-color);
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 20;
+}
+
+/* Overlays */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(18, 18, 24, 0.94);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+  padding: 24px;
+  transition: opacity 0.2s ease;
+}
+
+.overlay.hidden {
+  display: none !important;
+}
+
+.overlay-panel {
+  background: rgba(28, 28, 36, 0.96);
+  border: 2px solid var(--grid-line);
+  border-radius: 12px;
+  padding: 32px 28px;
+  width: 100%;
+  max-width: 580px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+.title-large {
+  font-size: 38px;
+  font-weight: bold;
+  color: var(--accent-gold);
+  margin-bottom: 28px;
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+.subtitle {
+  font-size: 20px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 380px;
+}
+
+.menu-btn {
+  background: var(--btn-bg);
+  border: 2px solid var(--grid-line);
+  color: var(--text-color);
+  font-family: 'Fira Mono', monospace;
+  font-size: 18px;
+  font-weight: bold;
+  padding: 14px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 52px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-btn:hover, .menu-btn:focus-visible {
+  background: var(--btn-bg-hover);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold-hover);
+  transform: translateY(-2px);
+}
+
+.menu-btn:active {
+  transform: translateY(1px);
+}
+
+.menu-btn.primary {
+  border-color: var(--accent-gold);
+}
+
+/* Forms & Inputs */
+.input-field {
+  width: 100%;
+  max-width: 440px;
+  background: var(--cell-empty);
+  border: 2px solid var(--accent-gold);
+  border-radius: 8px;
+  padding: 14px 18px;
+  color: var(--text-color);
+  font-family: 'Fira Mono', monospace;
+  font-size: 20px;
+  margin-bottom: 12px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  text-align: center;
+}
+
+.input-field:focus {
+  border-color: var(--accent-gold-hover);
+  box-shadow: 0 0 10px rgba(230, 190, 90, 0.4);
+}
+
+.hint-text {
+  font-size: 13px;
+  color: #999;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.hint-text.warning {
+  color: var(--danger-color);
+}
+
+/* Settings sliders and rows */
+.setting-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.volume-container {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume-slider {
+  flex: 1;
+  accent-color: var(--accent-gold);
+  cursor: pointer;
+  height: 8px;
+}
+
+/* Leaderboard Table */
+.leaderboard-table-container {
+  width: 100%;
+  max-height: 440px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.leaderboard-table th {
+  color: var(--grid-line);
+  padding: 8px 6px;
+  text-align: center;
+  font-weight: normal;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.leaderboard-table td {
+  padding: 7px 6px;
+  text-align: center;
+}
+
+.leaderboard-table tr.is-me {
+  background: rgba(230, 190, 90, 0.18);
+  font-weight: bold;
+}
+
+.loading-text, .error-text {
+  padding: 28px;
+  font-size: 16px;
+  text-align: center;
+}
+
+.loading-text {
+  color: var(--accent-gold);
+}
+
+.error-text {
+  color: var(--danger-color);
+}

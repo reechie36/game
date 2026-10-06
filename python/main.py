@@ -1,0 +1,1444 @@
+"""
+LETTER RISE — Quick Demo v2 (NOT the full game)
+=================================================
+Implements the v2 design decisions worked out in planning:
+
+- ALL unlocked rows are open/fillable at the same time (not just one
+  "active" row) — you choose which row to work on.
+- Rows build up ON THEIR OWN over time (every ROW_GROWTH_INTERVAL_MS),
+  pushing the whole stack upward, independent of whether you're keeping
+  up. This is on top of the existing fill/clear/lock logic, not a
+  replacement for it.
+- Falling letters are capped (MAX_FALLING at once) and only spawn above
+  the unlocked play area, to keep the board from feeling crowded.
+- A falling letter that reaches the top of the stack before being caught
+  VANISHES (it doesn't count as a miss against you directly, but you
+  lose the letter and the chance to use it).
+- Interaction is CLICK-AND-DRAG:
+        * Drag a falling letter and drop it into any empty grid cell in any
+            unlocked row.
+    * Drag a falling letter onto an OCCUPIED grid cell to REPLACE the
+      letter there. The evicted letter resumes falling from that spot.
+    * Drag a letter already placed in the grid to pick it back up and
+      move it. If you drop it somewhere invalid, it resumes falling
+      from wherever you dropped it (never just disappears).
+- Row fills with a valid word -> clears, scores points, resets to
+  empty (stays in place — the stack does not shrink from clearing).
+- Row fills with an invalid word -> LOCKS (grayed out, no longer
+    usable — including immune to shifts from below).
+- A valid word submitted beside locked cells -> UNLOCKS contiguous locked
+    cells directly beside that word.
+- If the stack reaches the top of the play area, you don't lose
+  immediately: a RECURRING grace period starts. Clearing any row
+  while in the grace period resets the timer. Let it expire -> Game
+  Over.
+- No miss-penalty for a falling letter reaching the bottom uncaught
+  (for now) — it just vanishes there too.
+
+Controls: mouse only (click-drag-drop). Press R to restart after Game
+Over. ESC to quit.
+
+Run locally with:  pip install pygame-ce   then   python letter_rise_demo_v2.py
+"""
+
+import os
+import random
+import sys
+import math
+import json
+import threading
+import uuid
+import pygame
+import pandas as pd
+from dotenv import load_dotenv
+from postgrest.exceptions import APIError
+from supabase import create_client
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+SCREEN_W, SCREEN_H = 820, 820
+FPS = 60
+
+ROW_LEN = 7                 # blocks per row; submitted words may use 1-7 blocks
+CELL = 64                   # cell size in px
+CELL_GAP = 6
+BOARD_LEFT = (SCREEN_W - (ROW_LEN * CELL + (ROW_LEN - 1) * CELL_GAP)) // 2
+BOARD_BOTTOM_Y = 660         # y-coordinate of the bottom of the lowest row (row index 0)
+
+BUFFER_LINE_Y = 106         # top edge of the row that starts the grace period
+SPAWN_Y = 20                 # falling letters spawn just below the top edge
+
+MAX_FALLING = 15
+SPAWN_INTERVAL_MS = 1000
+MIN_SPAWN_INTERVAL_MS = 250
+SPAWN_INTERVAL_STEP_MS = 50
+FALL_SPEED = 40.0            # px / second, eased down as stack rises (see update)
+FALLING_RADIUS = CELL // 2 - 6
+FALLING_DIAMETER = FALLING_RADIUS * 2
+DELETION_ZONE_HEIGHT = CELL * 2
+
+ROW_GROWTH_INTERVAL_MS = 17_500 
+MIN_ROW_GROWTH_INTERVAL_MS = 4_000
+ROW_GROWTH_INTERVAL_STEP_MS = 500
+GRACE_PERIOD_MS = 10_000
+ROW_HOLD_MS = 300
+ROW_FLICKER_MS = 200
+SCORE_POPUP_MS = 900
+SCORE_POPUP_INTRO_MS = 500
+BINGO_BONUS_MULTIPLIER = 2
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(PROJECT_DIR)
+load_dotenv(os.path.join(ROOT_DIR, ".env"), override=True)
+load_dotenv(os.path.join(PROJECT_DIR, ".env"), override=True)
+
+def _find_path(*candidates):
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return candidates[0]
+
+FONT_PATH = _find_path(
+    os.path.join(ROOT_DIR, "assets", "fonts", "FiraMono-Regular.ttf"),
+    os.path.join(ROOT_DIR, "FiraMono-Regular.ttf"),
+    os.path.join(PROJECT_DIR, "FiraMono-Regular.ttf"),
+)
+SOUNDS_DIR = _find_path(
+    os.path.join(ROOT_DIR, "assets", "sounds"),
+    os.path.join(ROOT_DIR, "source_data", "sounds"),
+    os.path.join(PROJECT_DIR, "source_data", "sounds"),
+)
+DATA_DIR = _find_path(
+    os.path.join(ROOT_DIR, "assets", "data"),
+    ROOT_DIR,
+    PROJECT_DIR,
+)
+
+SOUND_PATHS = {
+    "pickup": os.path.join(SOUNDS_DIR,  "dice_grab.wav"),
+    "place": os.path.join(SOUNDS_DIR, "chips_place_1.wav"),
+    "confirm": os.path.join(SOUNDS_DIR,  "item_equip.wav"),
+    "success": os.path.join(SOUNDS_DIR,  "grand_piano_chime_positive.wav"),
+    "bingo": os.path.join(SOUNDS_DIR,  "coin_jingle_small.wav"),
+    "error": os.path.join(SOUNDS_DIR,  "grand_piano_negative_quick.wav"),
+    "grow": os.path.join(SOUNDS_DIR, "lock_quick.wav"),
+    "warning": os.path.join(SOUNDS_DIR,  "grand_piano_negative_long.wav"),
+    "game_over": os.path.join(SOUNDS_DIR, "grand_piano_defeated.wav"),
+}
+PROFILE_PATH = os.path.join(PROJECT_DIR, "player_profile.json")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = (
+    os.environ.get("SUPABASE_ANON_KEY")
+    or os.environ.get("SUPABASE_KEY")
+    or os.environ.get("SUPABASE_TOKEN", "")
+)
+LEADERBOARD_LIMIT = 100
+
+# Colors
+BG = (18, 18, 24)
+GRID_LINE = (147, 147, 191)
+CELL_EMPTY = (32, 32, 42)
+CELL_UNLOCKED_FILLED = (48, 50, 58)
+CELL_LOCKED = (70, 70, 76)
+CELL_HOLE = (90, 40, 40)          # freshly vacated by discard/replace — visually distinct
+TEXT_COLOR = (235, 235, 240)
+DANGER_LINE_COLOR = (200, 60, 60)
+FALLING_COLOR = (230, 190, 90)
+FALLING_DRAG_COLOR = (255, 220, 130)
+GRACE_COLOR = (220, 90, 90)
+ROW_INVALID_COLOR = (170, 55, 55)
+ROW_FLICKER_COLOR = (245, 220, 110)
+SCORE_POPUP_COLOR = (255, 235, 135)
+
+TIER_COLORS = {
+    1: (220, 55, 55),    # red
+    2: (235, 105, 45),   # red-orange
+    3: (235, 205, 45),   # yellow
+    4: (155, 195, 55),   # yellow-green
+    5: (70, 175, 80),    # green
+    6: (50, 150, 190),   # blue-green
+    7: (125, 80, 190),   # blue-violet / purple
+    8: (190, 60, 145),   # red-violet
+}
+LETTER_POINT_COLORS = {
+    1: TIER_COLORS[1],
+    2: TIER_COLORS[3],
+    3: TIER_COLORS[4],
+    4: TIER_COLORS[5],
+    5: TIER_COLORS[6],
+    8: TIER_COLORS[7],
+    10: TIER_COLORS[8],
+}
+
+# Runtime datasets: merged vocabulary tiers and Scrabble letter values.
+dataset_path = (
+    os.path.join(DATA_DIR, "merged.csv")
+    if os.path.exists(os.path.join(DATA_DIR, "merged.csv"))
+    else os.path.join(PROJECT_DIR, "merged.csv")
+)
+points_path = (
+    os.path.join(DATA_DIR, "scrabble_letter_points.csv")
+    if os.path.exists(os.path.join(DATA_DIR, "scrabble_letter_points.csv"))
+    else os.path.join(PROJECT_DIR, "scrabble_letter_points.csv")
+)
+DATASET = pd.read_csv(dataset_path)
+LETTER_POINTS_DATASET = pd.read_csv(points_path)
+
+WORD_TIERS = {
+    str(word).strip().lower(): int(tier)
+    for word, tier in zip(DATASET["word"], DATASET["tier"])
+    if 1 <= len(str(word).strip()) <= ROW_LEN
+}
+WORD_TIERS.update({"a": 1, "i": 1})
+WORD_LIST = list(WORD_TIERS)
+WORD_SET = set(WORD_LIST)
+WORD_FREQUENCIES = {}
+for word, count in zip(DATASET["word"], DATASET["count"]):
+    normalized_word = str(word).strip().lower()
+    if normalized_word:
+        WORD_FREQUENCIES[normalized_word] = (
+            WORD_FREQUENCIES.get(normalized_word, 0) + int(count)
+        )
+WORD_FREQUENCIES.setdefault("a", 1)
+WORD_FREQUENCIES.setdefault("i", 1)
+LETTER_POINTS = {
+    str(character).strip().upper(): int(points)
+    for character, points in zip(
+        LETTER_POINTS_DATASET["character"], LETTER_POINTS_DATASET["points"]
+    )
+    if len(str(character).strip()) == 1
+}
+TIER_MULTIPLIERS = {
+    1: 1.0,
+    2: 1.2,
+    3: 1.5,
+    4: 2.0,
+    5: 2.5,
+    6: 3.0,
+    7: 3.5,
+    8: 4.0,
+}
+TIER_NAMES = {
+    1: "Common",
+    2: "Uncommon",
+    3: "Rare",
+    4: "Epic",
+    5: "Legendary",
+    6: "Mythic",
+    7: "Ancient",
+    8: "Celestial",
+}
+
+
+def calculate_word_score(word):
+    """Return Scrabble letter points multiplied by the word's tier bonus."""
+    normalized_word = word.strip().lower()
+    tier = WORD_TIERS[normalized_word]
+    base_points = sum(LETTER_POINTS[letter] for letter in normalized_word.upper())
+    return base_points * TIER_MULTIPLIERS[tier]
+
+# Weighted letter pool built from merged.csv word frequencies.
+_letter_weights = {}
+for _word, _word_count in WORD_FREQUENCIES.items():
+    for _ch in _word:
+        _letter_weights[_ch] = _letter_weights.get(_ch, 0) + _word_count
+LETTER_POOL = list(_letter_weights)
+LETTER_WEIGHTS = list(_letter_weights.values())
+
+
+def random_letter():
+    return random.choices(LETTER_POOL, weights=LETTER_WEIGHTS, k=1)[0]
+
+
+def letter_color(letter, dragging=False):
+    """Return a Scrabble-value color for a letter and its drag state."""
+    upper_letter = letter.upper()
+    if upper_letter == "S":
+        color = TIER_COLORS[2]
+    else:
+        points = LETTER_POINTS.get(upper_letter, 1)
+        color = LETTER_POINT_COLORS.get(points, TIER_COLORS[1])
+    if not dragging:
+        return color
+    return tuple(min(255, channel + 35) for channel in color)
+
+
+def tier_color(tier):
+    """Return the display color for a tier number."""
+    return TIER_COLORS[tier]
+
+
+class LeaderboardClient:
+    """Supabase client that keeps network failures out of the game loop."""
+
+    def __init__(self):
+        self.profile = self.load_profile()
+        self.rows = []
+        self.rank = None
+        self.error = None
+        self.loading = False
+        self.client = None
+        if self.configured():
+            try:
+                self.client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+            except (TypeError, ValueError) as exc:
+                self.error = "Invalid Supabase configuration"
+                print(f"Supabase unavailable: {exc}")
+
+    @staticmethod
+    def load_profile():
+        try:
+            with open(PROFILE_PATH, "r", encoding="utf-8") as profile_file:
+                profile = json.load(profile_file)
+        except (OSError, ValueError):
+            profile = {}
+        profile.setdefault("client_id", str(uuid.uuid4()))
+        profile.setdefault("player_name", "")
+        profile.setdefault("public", True)
+        profile.setdefault("personal_best", 0)
+        profile.setdefault("sound_volume", 0.75)
+        profile.setdefault("sound_muted", False)
+        return profile
+
+    def save_profile(self):
+        try:
+            with open(PROFILE_PATH, "w", encoding="utf-8") as profile_file:
+                json.dump(self.profile, profile_file, indent=2)
+        except OSError:
+            pass
+
+    def configured(self):
+        return bool(SUPABASE_URL and SUPABASE_ANON_KEY)
+
+    def fetch_leaderboard(self):
+        if self.client is None:
+            raise RuntimeError("Supabase is not configured")
+        response = self.client.rpc(
+            "get_leaderboard",
+            {
+                "requested_client_id": self.profile["client_id"],
+                "result_limit": LEADERBOARD_LIMIT,
+            },
+        ).execute()
+        result = response.data
+        return result.get("rows", result) if isinstance(result, dict) else result
+
+    def submit_and_refresh(self, score, rarest_word):
+        try:
+            if not self.profile["public"]:
+                self.error = "Global sharing is off in Settings"
+                return
+            if self.client is None:
+                raise RuntimeError("Supabase is not configured")
+            self.client.table("leaderboard").insert(
+                {
+                    "player_name": self.profile["player_name"],
+                    "score": round(score, 2),
+                    "rarest_word_found": rarest_word or "-",
+                    "client_id": self.profile["client_id"],
+                },
+            ).execute()
+            self.rows = self.fetch_leaderboard()
+            self.rank = next(
+                (row.get("rank") for row in self.rows if row.get("is_me")),
+                None,
+            )
+            self.error = None
+        except (APIError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            self.error = "Couldn't reach leaderboard"
+            print(f"Leaderboard unavailable: {exc}")
+        finally:
+            self.loading = False
+
+    def refresh_async(self):
+        if self.loading:
+            return
+        self.loading = True
+        self.error = None
+        threading.Thread(target=self._refresh, daemon=True).start()
+
+    def _refresh(self):
+        try:
+            self.rows = self.fetch_leaderboard()
+            self.rank = next(
+                (row.get("rank") for row in self.rows if row.get("is_me")),
+                None,
+            )
+            self.error = None
+        except (APIError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            self.error = "Couldn't reach leaderboard"
+            print(f"Leaderboard unavailable: {exc}")
+        finally:
+            self.loading = False
+
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+class Row:
+    """A single row of ROW_LEN cells. Index 0 = bottom-most row in the stack."""
+
+    def __init__(self):
+        self.cells = [None] * ROW_LEN     # each entry: letter char or None
+        self.hole_cols = set()             # columns freshly vacated (visual only)
+        self.locked_cols = set()
+        self.scored_cols = set()
+        self.resolution_phase = None       # "hold" or "flicker" while checking
+        self.resolution_until = 0
+        self.resolution_range = None
+
+    def is_full(self):
+        return all(c is not None for c in self.cells)
+
+    def word(self):
+        return "".join(c if c else "?" for c in self.cells)
+
+    def segment_word(self, start, end):
+        return "".join(self.cells[start:end + 1])
+
+    def is_locked(self, col):
+        return col in self.locked_cols
+
+
+class FallingLetter:
+    def __init__(self, letter, x, y):
+        self.letter = letter
+        self.x = x
+        self.y = y
+        self.dragging = False
+        # origin tells us what happens when a placed letter is dropped outside
+        # a grid cell.
+        self.origin = "fall"
+
+
+class ScorePopup:
+    def __init__(self, base_points, multiplier, points, tier, bingo, x, y, created_at):
+        self.base_points = base_points
+        self.multiplier = multiplier
+        self.points = points
+        self.tier = tier
+        self.bingo = bingo
+        self.x = x
+        self.y = y
+        self.created_at = created_at
+
+
+class Board:
+    def __init__(self):
+        self.rows = [Row()]  # start with one open row at the bottom
+        self.falling = []
+        self.sound_events = []
+        self.score = 0
+        self.started_at = pygame.time.get_ticks()
+        self.ended_at = None
+        self.paused_at = None
+        self.paused_ms = 0
+        self.last_spawn = self.started_at
+        self.last_growth = self.started_at
+        self.grace_active = False
+        self.grace_end = 0
+        self.game_over = False
+        self.score_popups = []
+        self.rarest_word_found = ""
+
+    # -- geometry -----------------------------------------------------
+
+    def row_top_y(self, idx):
+        """Top y-coordinate of row `idx` (0 = bottom)."""
+        return BOARD_BOTTOM_Y - (idx + 1) * (CELL + CELL_GAP) + CELL_GAP
+
+    def stack_top_y(self):
+        """Top edge y-coordinate of the whole stack (smallest y = highest row)."""
+        return self.row_top_y(len(self.rows) - 1)
+
+    def danger_level(self):
+        """Return how close the stack is to the danger line, from 0 to 1."""
+        safe_height = BOARD_BOTTOM_Y - BUFFER_LINE_Y
+        stack_height = BOARD_BOTTOM_Y - self.stack_top_y()
+        return max(0.0, min(1.0, stack_height / safe_height))
+
+    def cell_rect(self, row_idx, col):
+        x = BOARD_LEFT + col * (CELL + CELL_GAP)
+        y = self.row_top_y(row_idx)
+        return pygame.Rect(x, y, CELL, CELL)
+
+    # -- growth / spawning ---------------------------------------------
+
+    def difficulty_steps(self, now):
+        return self.active_elapsed_ms(now) // 60_000
+
+    def active_elapsed_ms(self, now):
+        end_time = self.ended_at if self.ended_at is not None else now
+        paused_ms = self.paused_ms
+        if self.paused_at is not None:
+            paused_ms += now - self.paused_at
+        return max(0, end_time - self.started_at - paused_ms)
+
+    def pause(self, now):
+        if self.paused_at is None:
+            self.paused_at = now
+
+    def resume(self, now):
+        if self.paused_at is None:
+            return
+        pause_duration = now - self.paused_at
+        self.paused_ms += pause_duration
+        self.last_spawn += pause_duration
+        self.last_growth += pause_duration
+        if self.grace_active:
+            self.grace_end += pause_duration
+        self.paused_at = None
+
+    def spawn_interval(self, now):
+        return max(
+            MIN_SPAWN_INTERVAL_MS,
+            SPAWN_INTERVAL_MS - self.difficulty_steps(now) * SPAWN_INTERVAL_STEP_MS,
+        )
+
+    def row_growth_interval(self, now):
+        return max(
+            MIN_ROW_GROWTH_INTERVAL_MS,
+            ROW_GROWTH_INTERVAL_MS - self.difficulty_steps(now) * ROW_GROWTH_INTERVAL_STEP_MS,
+        )
+
+    def maybe_grow(self, now):
+        if self.grace_active:
+            return
+        if now - self.last_growth >= self.row_growth_interval(now):
+            self.last_growth = now
+            self.rows.insert(0, Row())
+            self.sound_events.append("grow")
+
+    def maybe_spawn(self, now):
+        if len(self.falling) >= MAX_FALLING:
+            return
+        if now - self.last_spawn < self.spawn_interval(now):
+            return
+        self.last_spawn = now
+        x = random.randint(CELL // 2, SCREEN_W - CELL // 2)
+        self.falling.append(FallingLetter(random_letter(), x, SPAWN_Y))
+
+    def separate_falling_letters(self):
+        for _ in range(12):
+            for index, first in enumerate(self.falling):
+                for second in self.falling[index + 1:]:
+                    dx = second.x - first.x
+                    dy = second.y - first.y
+                    distance = math.hypot(dx, dy)
+                    if distance >= FALLING_DIAMETER:
+                        continue
+
+                    if distance == 0:
+                        push_x, push_y = FALLING_DIAMETER, 0.0
+                    else:
+                        push_x = dx / distance * (FALLING_DIAMETER - distance)
+                        push_y = dy / distance * (FALLING_DIAMETER - distance)
+                    if first.dragging:
+                        second.x += push_x
+                        second.y += push_y
+                    elif second.dragging:
+                        first.x -= push_x
+                        first.y -= push_y
+                    else:
+                        first.x -= push_x / 2
+                        first.y -= push_y / 2
+                        second.x += push_x / 2
+                        second.y += push_y / 2
+
+                    first.x = max(FALLING_RADIUS, min(SCREEN_W - FALLING_RADIUS, first.x))
+                    second.x = max(FALLING_RADIUS, min(SCREEN_W - FALLING_RADIUS, second.x))
+
+    # -- per-frame update -------------------------------------------------
+
+    def update(self, dt, now):
+        if self.game_over:
+            return
+
+        self.maybe_grow(now)
+        self.maybe_spawn(now)
+        self.update_row_resolutions(now)
+        self.score_popups = [
+            popup for popup in self.score_popups
+            if now - popup.created_at < SCORE_POPUP_MS
+        ]
+
+        # Ease fall speed down slightly as the stack rises, so total pressure
+        # doesn't compound (board getting smaller already raises difficulty).
+        rows_up = max(0, len(self.rows) - 3)
+        speed = max(28.0, FALL_SPEED - rows_up * 3.0)
+
+        top_y = self.stack_top_y()
+        still_falling = []
+        for fl in self.falling:
+            if fl.dragging:
+                still_falling.append(fl)
+                continue
+            fl.y += speed * dt
+            if fl.y >= top_y - 4 + FALLING_DIAMETER or fl.y >= SCREEN_H:
+                continue  # vanished — touched the stack, or hit the floor
+            still_falling.append(fl)
+        self.falling = still_falling
+        self.separate_falling_letters()
+
+        self.update_grace_period(now, top_y)
+
+    def update_grace_period(self, now, top_y=None):
+        """Start, reset, or end the grace period from the current stack height."""
+        if top_y is None:
+            top_y = self.stack_top_y()
+        in_danger = top_y <= BUFFER_LINE_Y
+        if in_danger and not self.grace_active:
+            self.grace_active = True
+            self.grace_end = now + GRACE_PERIOD_MS
+            self.last_growth = now
+            self.sound_events.append("warning")
+        elif not in_danger and self.grace_active:
+            self.grace_active = False
+            self.grace_end = 0
+
+        if self.grace_active and now >= self.grace_end:
+            self.game_over = True
+            self.ended_at = now
+            self.sound_events.append("game_over")
+
+    def elapsed_seconds(self, now):
+        return self.active_elapsed_ms(now) // 1000
+
+    def grace_remaining_ms(self, now):
+        reference_time = self.paused_at if self.paused_at is not None else now
+        return max(0, self.grace_end - reference_time)
+
+    def on_row_cleared(self, now):
+        """Call whenever a row successfully clears — resets grace timer."""
+        if self.grace_active:
+            self.grace_end = now + GRACE_PERIOD_MS
+
+    def update_row_resolutions(self, now):
+        for row in self.rows[:]:
+            if row.resolution_phase == "hold" and now >= row.resolution_until:
+                row.resolution_phase = "flicker"
+                row.resolution_until = now + ROW_FLICKER_MS
+            elif row.resolution_phase == "flicker" and now >= row.resolution_until:
+                self.finish_row_resolution(row, now)
+
+    def finish_row_resolution(self, row, now):
+        start, end = row.resolution_range
+        word = row.segment_word(start, end)
+        row.resolution_phase = None
+        row.resolution_until = 0
+        row.resolution_range = None
+        if word in WORD_SET:
+            tier = WORD_TIERS[word]
+            multiplier = TIER_MULTIPLIERS[tier]
+            base_points = sum(LETTER_POINTS[letter] for letter in word.upper())
+            points = base_points * multiplier
+            bingo = len(word) == ROW_LEN
+            if bingo:
+                points *= BINGO_BONUS_MULTIPLIER
+            self.score += points
+            if tier > WORD_TIERS.get(self.rarest_word_found, 0):
+                self.rarest_word_found = word
+            row_index = self.rows.index(row)
+            self.score_popups.append(ScorePopup(
+                base_points,
+                multiplier,
+                points,
+                tier,
+                bingo,
+                BOARD_LEFT + ((start + end + 1) * CELL + (start + end) * CELL_GAP) / 2,
+                self.row_top_y(row_index) + CELL / 2,
+                now,
+            ))
+            for col in range(start, end + 1):
+                row.cells[col] = None
+                row.hole_cols.add(col)
+            row.scored_cols.update(range(start, end + 1))
+            self.unlock_adjacent_locked_cells(row, start, end)
+            self.on_row_cleared(now)
+            self.sound_events.append("bingo" if bingo else "success")
+            if len(row.scored_cols) == ROW_LEN:
+                row.hole_cols.clear()
+                self.rows.remove(row)
+        else:
+            row.locked_cols.update(range(start, end + 1))
+            self.sound_events.append("error")
+
+    def unlock_adjacent_locked_cells(self, row, start, end):
+        """Unlock contiguous locked cells directly beside a valid word."""
+        left = start - 1
+        while left >= 0 and left in row.locked_cols:
+            row.locked_cols.remove(left)
+            left -= 1
+
+        right = end + 1
+        while right < ROW_LEN and right in row.locked_cols:
+            row.locked_cols.remove(right)
+            right += 1
+
+    # -- word checking -------------------------------------------------
+
+    def try_clear_segment(self, row_idx, start, end, now):
+        row = self.rows[row_idx]
+        if row.resolution_phase is not None:
+            return
+        if any(
+            row.cells[col] is None
+            or row.is_locked(col)
+            or col in row.scored_cols
+            for col in range(start, end + 1)
+        ):
+            return
+        row.resolution_phase = "hold"
+        row.resolution_until = now + ROW_HOLD_MS
+        row.resolution_range = (start, end)
+        self.sound_events.append("confirm")
+
+
+# ---------------------------------------------------------------------------
+# Interaction
+# ---------------------------------------------------------------------------
+
+class Game:
+    def __init__(self):
+        pygame.mixer.pre_init(44100, -16, 2, 512)
+        pygame.init()
+        pygame.display.set_caption("Letter Rise — Demo v2")
+        self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+        self.clock = pygame.time.Clock()
+        self.sounds = {}
+        if pygame.mixer.get_init() is not None:
+            for name, path in SOUND_PATHS.items():
+                try:
+                    self.sounds[name] = pygame.mixer.Sound(path)
+                except pygame.error as error:
+                    print(f"Could not load sound '{path}': {error}")
+        else:
+            print("Sound effects are unavailable because the audio mixer failed to initialize.")
+        self.font = pygame.font.Font(FONT_PATH, 30)
+        self.font.set_bold(True)
+        self.small_font = pygame.font.Font(FONT_PATH, 18)
+        self.big_font = pygame.font.Font(FONT_PATH, 46)
+        self.big_font.set_bold(True)
+        self.title_font = pygame.font.Font(FONT_PATH, 58)
+        self.title_font.set_bold(True)
+        self.leaderboard = LeaderboardClient()
+        try:
+            self.audio_volume = max(0.0, min(1.0, float(self.leaderboard.profile["sound_volume"])))
+        except (KeyError, TypeError, ValueError):
+            self.audio_volume = 0.75
+        self.audio_muted = bool(self.leaderboard.profile.get("sound_muted", False))
+        self.apply_audio_settings()
+        self.state = "name_entry"
+        self.name_input = ""
+        self.name_cursor = True
+        self.name_prompt = True
+        self.name_entry_return = "menu"
+        self.submission_started = False
+        self.new_personal_best = False
+        self.reset()
+        self.name_prompt = True
+        self.name_entry_return = "menu"
+        self.state = "name_entry"
+
+    def reset(self):
+        self.board = Board()
+        self.dragging = None  # the FallingLetter currently being dragged
+        self.submission_started = False
+        self.name_prompt = False
+        self.state = "playing"
+
+    def prompt_for_new_game(self):
+        self.name_input = ""
+        self.name_prompt = True
+        self.name_entry_return = "play"
+        self.state = "name_entry"
+
+    def play_sound(self, name):
+        sound = self.sounds.get(name)
+        if sound is not None and not self.audio_muted:
+            sound.play()
+
+    def apply_audio_settings(self):
+        volume = 0.0 if self.audio_muted else self.audio_volume
+        for sound in self.sounds.values():
+            sound.set_volume(volume)
+
+    def save_audio_settings(self):
+        self.leaderboard.profile["sound_volume"] = self.audio_volume
+        self.leaderboard.profile["sound_muted"] = self.audio_muted
+        self.leaderboard.save_profile()
+
+    def play_board_sounds(self):
+        for event in self.board.sound_events:
+            self.play_sound(event)
+        self.board.sound_events.clear()
+
+    def button_rect(self, index, width=300, height=54):
+        return pygame.Rect(
+            (SCREEN_W - width) // 2,
+            250 + index * (height + 16),
+            width,
+            height,
+        )
+
+    def clean_name(self, name):
+        blocked = {"fuck", "shit", "bitch", "cunt", "nigger", "faggot"}
+        cleaned = " ".join(name.strip().split())[:16]
+        if not cleaned or any(word in cleaned.lower() for word in blocked):
+            return ""
+        return cleaned
+
+    def save_name(self):
+        cleaned = self.clean_name(self.name_input)
+        if not cleaned:
+            return False
+        self.name_input = cleaned
+        self.leaderboard.profile["player_name"] = cleaned
+        self.leaderboard.save_profile()
+        return True
+
+    def start_submission(self):
+        if self.submission_started or not self.leaderboard.profile["player_name"]:
+            return
+        self.submission_started = True
+        self.new_personal_best = self.board.score > self.leaderboard.profile["personal_best"]
+        if self.new_personal_best:
+            self.leaderboard.profile["personal_best"] = round(self.board.score, 2)
+            self.leaderboard.save_profile()
+        self.leaderboard.loading = True
+        threading.Thread(
+            target=self.leaderboard.submit_and_refresh,
+            args=(self.board.score, self.board.rarest_word_found),
+            daemon=True,
+        ).start()
+
+    def open_leaderboard(self):
+        self.state = "leaderboard"
+        self.leaderboard.refresh_async()
+
+    def draw_button(self, rect, label, active=False):
+        color = (72, 72, 86) if active else (45, 45, 58)
+        if active:
+            pulse = 2 + round(2 * (1 + math.sin(pygame.time.get_ticks() / 140)) / 2)
+            animated_rect = rect.inflate(pulse * 2, pulse)
+            animated_rect.y -= pulse
+        else:
+            animated_rect = rect
+        pygame.draw.rect(self.screen, color, animated_rect, border_radius=8)
+        pygame.draw.rect(self.screen, FALLING_COLOR if active else GRID_LINE, animated_rect, 2, border_radius=8)
+        text = self.font.render(label, True, TEXT_COLOR)
+        self.screen.blit(text, text.get_rect(center=animated_rect.center))
+
+    def draw_menu(self):
+        self.screen.fill(BG)
+        title = self.title_font.render("LETTER RISE", True, FALLING_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 140)))
+        mouse_pos = pygame.mouse.get_pos()
+        for index, label in enumerate(("PLAY", "LEADERBOARD", "SETTINGS", "QUIT")):
+            rect = self.button_rect(index)
+            self.draw_button(rect, label, rect.collidepoint(mouse_pos))
+
+    def draw_pause_overlay(self):
+        overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        overlay.fill((100, 100, 100, 190))
+        self.screen.blit(overlay, (0, 0))
+        pause_text = self.big_font.render("PAUSED", True, TEXT_COLOR)
+        self.screen.blit(
+            pause_text,
+            pause_text.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 24)),
+        )
+        hint = self.small_font.render("Press P to resume", True, TEXT_COLOR)
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 34)))
+
+    def draw_name_prompt(self):
+        self.screen.fill(BG)
+        title = self.big_font.render("Choose a display name", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 190)))
+        pygame.draw.rect(self.screen, CELL_EMPTY, (130, 270, 560, 62), border_radius=6)
+        pygame.draw.rect(self.screen, FALLING_COLOR, (130, 270, 560, 62), 2, border_radius=6)
+        shown_name = self.name_input + ("|" if self.name_cursor else "")
+        name_text = self.font.render(shown_name, True, TEXT_COLOR)
+        self.screen.blit(name_text, (150, 285))
+        hint = self.small_font.render("Enter to continue  |  Esc to cancel", True, TEXT_COLOR)
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, 390)))
+        warning = self.small_font.render("1-16 characters; public display name", True, GRACE_COLOR)
+        self.screen.blit(warning, warning.get_rect(center=(SCREEN_W // 2, 430)))
+
+    def draw_settings(self):
+        self.screen.fill(BG)
+        title = self.big_font.render("SETTINGS", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 125)))
+        name_text = self.font.render(f"Name: {self.leaderboard.profile['player_name'] or '(not set)'}", True, TEXT_COLOR)
+        self.screen.blit(name_text, (90, 220))
+        mouse_pos = pygame.mouse.get_pos()
+        privacy = "ON" if self.leaderboard.profile["public"] else "OFF"
+        privacy_button = pygame.Rect(90, 285, 640, 54)
+        name_button = pygame.Rect(90, 365, 640, 54)
+        volume_track = pygame.Rect(260, 470, 430, 10)
+        volume_label = "SOUND: MUTED" if self.audio_muted else f"SOUND: {round(self.audio_volume * 100)}%"
+        volume_text = self.small_font.render(volume_label, True, TEXT_COLOR)
+        self.screen.blit(volume_text, (90, 465))
+        pygame.draw.rect(self.screen, CELL_EMPTY, volume_track, border_radius=5)
+        pygame.draw.rect(
+            self.screen,
+            FALLING_COLOR,
+            pygame.Rect(volume_track.left, volume_track.top, round(volume_track.width * self.audio_volume), volume_track.height),
+            border_radius=5,
+        )
+        knob_x = volume_track.left + round(volume_track.width * self.audio_volume)
+        pygame.draw.circle(self.screen, TEXT_COLOR, (knob_x, volume_track.centery), 8)
+        mute_button = pygame.Rect(90, 525, 640, 54)
+        back_button = pygame.Rect(90, 605, 640, 54)
+        self.draw_button(privacy_button, f"GLOBAL SCORES: {privacy}", privacy_button.collidepoint(mouse_pos))
+        self.draw_button(name_button, "EDIT DISPLAY NAME", name_button.collidepoint(mouse_pos))
+        self.draw_button(mute_button, "UNMUTE SOUND" if self.audio_muted else "MUTE SOUND", mute_button.collidepoint(mouse_pos))
+        self.draw_button(back_button, "BACK", back_button.collidepoint(mouse_pos))
+
+    def draw_leaderboard(self):
+        self.screen.fill(BG)
+        title = self.big_font.render("GLOBAL LEADERBOARD", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 62)))
+        if self.leaderboard.loading:
+            loading = self.font.render("Loading...", True, FALLING_COLOR)
+            self.screen.blit(loading, loading.get_rect(center=(SCREEN_W // 2, 180)))
+        elif self.leaderboard.error:
+            error = self.small_font.render(self.leaderboard.error, True, GRACE_COLOR)
+            self.screen.blit(error, error.get_rect(center=(SCREEN_W // 2, 180)))
+        else:
+            columns = ((78, "RANK"), (230, "PLAYER"), (430, "SCORE"), (585, "RAREST WORD"), (735, "WORD PTS"))
+            for x, label in columns:
+                header = self.small_font.render(label, True, GRID_LINE)
+                self.screen.blit(header, header.get_rect(center=(x, 120)))
+            positive_rows = []
+            for row in self.leaderboard.rows:
+                try:
+                    score = float(row.get("score", 0))
+                except (TypeError, ValueError):
+                    continue
+                if score > 0:
+                    positive_rows.append((row, score))
+            for index, (row, score) in enumerate(positive_rows[:18]):
+                y = 155 + index * 28
+                if row.get("is_me"):
+                    pygame.draw.rect(self.screen, (75, 65, 35), (45, y - 3, 730, 27), border_radius=4)
+                rank = row.get("rank", index + 1)
+                player = str(row.get("player_name", "Unknown"))[:16]
+                word = str(row.get("rarest_word_found", "-"))[:10]
+                word_points = 0
+                if word != "-" and word.lower() in WORD_TIERS:
+                    word_points = calculate_word_score(word)
+                    if len(word) == ROW_LEN:
+                        word_points *= BINGO_BONUS_MULTIPLIER
+                values = (
+                    (f"#{rank}", 78),
+                    (player, 230),
+                    (f"{score:.2f}", 430),
+                    (word, 585),
+                    (f"{word_points:.2f}", 735),
+                )
+                for value, x in values:
+                    text = self.small_font.render(value, True, TEXT_COLOR)
+                    self.screen.blit(text, text.get_rect(center=(x, y + 10)))
+        back = pygame.Rect(260, 700, 300, 52)
+        self.draw_button(back, "BACK", back.collidepoint(pygame.mouse.get_pos()))
+
+    # -- hit testing -----------------------------------------------------
+
+    def find_falling_at(self, pos):
+        for fl in reversed(self.board.falling):
+            if not fl.dragging and abs(fl.x - pos[0]) < CELL // 2 and abs(fl.y - pos[1]) < CELL // 2:
+                return fl
+        return None
+
+    def find_grid_cell_at(self, pos):
+        for r_idx, row in enumerate(self.board.rows):
+            for c in range(ROW_LEN):
+                if self.board.cell_rect(r_idx, c).collidepoint(pos):
+                    return r_idx, c
+        return None
+
+    def find_hover_candidate(self, pos):
+        cell = self.find_grid_cell_at(pos)
+        if cell is None:
+            return None
+        row_idx, col = cell
+        row = self.board.rows[row_idx]
+        if (
+            row.resolution_phase is not None
+            or row.cells[col] is None
+            or row.is_locked(col)
+            or col in row.scored_cols
+        ):
+            return None
+
+        start = col
+        while (
+            start > 0
+            and row.cells[start - 1] is not None
+            and not row.is_locked(start - 1)
+            and start - 1 not in row.scored_cols
+        ):
+            start -= 1
+        end = col
+        while (
+            end < ROW_LEN - 1
+            and row.cells[end + 1] is not None
+            and not row.is_locked(end + 1)
+            and end + 1 not in row.scored_cols
+        ):
+            end += 1
+        return row_idx, start, end
+
+    # -- mouse handling ----------------------------------------------------
+
+    def handle_mousedown(self, pos):
+        if self.board.game_over:
+            return
+
+        fl = self.find_falling_at(pos)
+        if fl is not None:
+            fl.dragging = True
+            fl.origin = "fall"
+            self.dragging = fl
+            self.play_sound("pickup")
+            return
+
+        cell = self.find_grid_cell_at(pos)
+        if cell is not None:
+            r_idx, c = cell
+            row = self.board.rows[r_idx]
+            if (
+                row.resolution_phase is None
+                and not row.is_locked(c)
+                and c not in row.scored_cols
+                and row.cells[c] is not None
+            ):
+                letter = row.cells[c]
+                row.cells[c] = None
+                row.hole_cols.discard(c)
+                fl = FallingLetter(letter, pos[0], pos[1])
+                fl.dragging = True
+                fl.origin = "grid"
+                self.dragging = fl
+                self.board.falling.append(fl)
+                self.play_sound("pickup")
+            return
+
+    def handle_mousemove(self, pos):
+        if self.dragging is not None:
+            self.dragging.x, self.dragging.y = pos
+
+    def handle_mouseup(self, pos):
+        fl = self.dragging
+        self.dragging = None
+        if fl is None:
+            return
+        now = pygame.time.get_ticks()
+
+        # Grid cell
+        cell = self.find_grid_cell_at(pos)
+        if cell is not None:
+            r_idx, c = cell
+            row = self.board.rows[r_idx]
+            if (
+                row.resolution_phase is None
+                and not row.is_locked(c)
+                and c not in row.scored_cols
+            ):
+                if row.cells[c] is None:
+                    row.cells[c] = fl.letter
+                    row.hole_cols.discard(c)
+                    if fl in self.board.falling:
+                        self.board.falling.remove(fl)
+                    self.play_sound("place")
+                    return
+                elif fl.origin == "fall":
+                    # replace: evicted letter resumes falling from this spot
+                    evicted = row.cells[c]
+                    row.cells[c] = fl.letter
+                    row.hole_cols.discard(c)
+                    if fl in self.board.falling:
+                        self.board.falling.remove(fl)
+                    new_fl = FallingLetter(evicted, pos[0], pos[1])
+                    new_fl.origin = "fall"
+                    self.board.falling.append(new_fl)
+                    self.play_sound("place")
+                    return
+                # occupied + origin == "grid": no-op, falls through to invalid-drop handling
+
+        # Invalid drop location
+        # Resume falling from the release point.
+        fl.x, fl.y = pos
+        # dragging flag cleared implicitly since fl.dragging isn't checked elsewhere
+        fl.dragging = False
+
+    def confirm_hovered_segment(self):
+        if self.board.game_over or self.dragging is not None:
+            return
+        candidate = self.find_hover_candidate(pygame.mouse.get_pos())
+        if candidate is None:
+            return
+        row_idx, start, end = candidate
+        self.board.try_clear_segment(
+            row_idx,
+            start,
+            end,
+            pygame.time.get_ticks(),
+        )
+
+    # -- render -----------------------------------------------------------
+
+    def draw(self):
+        if self.state == "menu":
+            self.draw_menu()
+            pygame.display.flip()
+            return
+        if self.state == "leaderboard":
+            self.draw_leaderboard()
+            pygame.display.flip()
+            return
+        if self.state == "settings":
+            self.draw_settings()
+            pygame.display.flip()
+            return
+        if self.state == "name_entry":
+            self.draw_name_prompt()
+            pygame.display.flip()
+            return
+        self.screen.fill(BG)
+        board = self.board
+        now = pygame.time.get_ticks()
+
+        # The stack consumes falling letters at its highest top edge. Draw the
+        # moving boundary line here; the masking gradient is drawn after the
+        # falling letters so they disappear naturally behind it.
+        disappear_y = board.stack_top_y() - 4
+
+        # Cover the area below the gradient before drawing UI elements so the
+        # bank and grid remain visible on top of it.
+        under_gradient_y = disappear_y + DELETION_ZONE_HEIGHT
+        if under_gradient_y < SCREEN_H:
+            pygame.draw.rect(
+                self.screen,
+                BG,
+                pygame.Rect(0, under_gradient_y, SCREEN_W, SCREEN_H - under_gradient_y),
+            )
+
+        # danger / buffer line
+        pygame.draw.line(self.screen, DANGER_LINE_COLOR, (0, BUFFER_LINE_Y), (SCREEN_W, BUFFER_LINE_Y), 2)
+
+        
+
+        # Draw ungrabbed letters before the deletion mask so they disappear
+        # behind the stack boundary as they pass under it.
+        for fl in board.falling:
+            if fl.dragging:
+                continue
+            color = letter_color(fl.letter, fl.dragging)
+            pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
+            txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
+            self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
+
+        deletion_zone = pygame.Rect(
+            0,
+            disappear_y,
+            SCREEN_W,
+            DELETION_ZONE_HEIGHT,
+        )
+        pygame.draw.rect(self.screen, BG, deletion_zone)
+
+        gradient = pygame.Surface((SCREEN_W, DELETION_ZONE_HEIGHT), pygame.SRCALPHA)
+        for y in range(DELETION_ZONE_HEIGHT):
+            distance = (y + 1) / DELETION_ZONE_HEIGHT
+            alpha = round(105 * (1 - distance) ** 2)
+            pygame.draw.line(
+                gradient,
+                (220, 45, 45, alpha),
+                (0, y),
+                (SCREEN_W, y),
+            )
+        self.screen.blit(gradient, (0, disappear_y))
+
+        pygame.draw.line(
+            self.screen,
+            (245, 75, 75, 180),
+            (0, disappear_y),
+            (SCREEN_W, disappear_y),
+            2,
+        )
+
+        # Draw the grid last so its cells and letters stay visible above the
+        # disappearance line and its masking gradient.
+        hover_candidate = None
+        if self.dragging is None:
+            hover_candidate = self.find_hover_candidate(pygame.mouse.get_pos())
+        hovered_cell = self.find_grid_cell_at(pygame.mouse.get_pos())
+        for r_idx, row in enumerate(board.rows):
+            top_y = board.row_top_y(r_idx)
+            if top_y < -CELL:
+                continue
+            for c in range(ROW_LEN):
+                rect = board.cell_rect(r_idx, c)
+                if c in row.scored_cols:
+                    continue
+                if row.is_locked(c):
+                    color = ROW_INVALID_COLOR
+                elif (
+                    row.resolution_phase == "flicker"
+                    and row.resolution_range is not None
+                    and row.resolution_range[0] <= c <= row.resolution_range[1]
+                    and (pygame.time.get_ticks() // 50) % 2 == 0
+                ):
+                    color = ROW_FLICKER_COLOR
+                elif c in row.hole_cols:
+                    color = CELL_HOLE
+                elif row.cells[c] is not None:
+                    color = CELL_UNLOCKED_FILLED
+                else:
+                    color = CELL_EMPTY
+                pygame.draw.rect(self.screen, color, rect, border_radius=6)
+                pygame.draw.rect(self.screen, GRID_LINE, rect, 2, border_radius=6)
+                if hover_candidate is not None and hover_candidate[0] == r_idx:
+                    _, start, end = hover_candidate
+                    if start <= c <= end:
+                        pygame.draw.rect(
+                            self.screen,
+                            ROW_FLICKER_COLOR,
+                            rect,
+                            3,
+                            border_radius=6,
+                        )
+                if hovered_cell == (r_idx, c):
+                    pygame.draw.rect(
+                        self.screen,
+                        TEXT_COLOR,
+                        rect,
+                        3,
+                        border_radius=6,
+                    )
+                if row.cells[c] is not None:
+                    txt = self.font.render(row.cells[c].upper(), True, letter_color(row.cells[c]))
+                    self.screen.blit(txt, txt.get_rect(center=rect.center))
+
+        # Keep the letter being dragged above the boundary, grid, and every
+        # other board element so it remains visible throughout the drag.
+        for fl in board.falling:
+            if not fl.dragging:
+                continue
+            color = letter_color(fl.letter, dragging=True)
+            pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
+            txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
+            self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
+
+        if board.grace_active and not board.game_over:
+            beat_period_ms = 60_000 / 80
+            beat_phase = (now % beat_period_ms) / beat_period_ms
+            pulse = min(
+                1.0,
+                math.exp(-((beat_phase - 0.12) / 0.055) ** 2)
+                + 0.55 * math.exp(-((beat_phase - 0.27) / 0.08) ** 2),
+            )
+            grace_overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            grace_overlay.fill((255, 90, 90, round(18 + pulse * 55)))
+            self.screen.blit(grace_overlay, (0, 0))
+
+        # Completed rows launch their score briefly upward before fading out.
+        now = pygame.time.get_ticks()
+        for popup in board.score_popups:
+            age = now - popup.created_at
+            progress = age / SCORE_POPUP_MS
+            popup_y = popup.y - 42 * progress
+            if age < SCORE_POPUP_INTRO_MS:
+                popup_alpha = 255
+                popup_text = f"{popup.base_points:g} x {popup.multiplier:g}"
+                if popup.bingo:
+                    popup_text += f" x{BINGO_BONUS_MULTIPLIER:g}"
+            else:
+                popup_alpha = round(255 * (1 - progress))
+                popup_text = f"+ {popup.points:g}!"
+            popup_txt = self.font.render(popup_text, True, SCORE_POPUP_COLOR)
+            popup_txt.set_alpha(popup_alpha)
+            self.screen.blit(popup_txt, popup_txt.get_rect(center=(round(popup.x), round(popup_y))))
+
+            tier_text = self.font.render(
+                f"{TIER_NAMES[popup.tier]}",
+                True,
+                tier_color(popup.tier),
+            )
+            tier_text.set_alpha(popup_alpha)
+            self.screen.blit(
+                tier_text,
+                tier_text.get_rect(center=(SCREEN_W // 2, BOARD_BOTTOM_Y + 75)),
+            )
+            if popup.bingo:
+                bingo_text = self.big_font.render("BINGO!", True, SCORE_POPUP_COLOR)
+                bingo_text.set_alpha(popup_alpha)
+                self.screen.blit(
+                    bingo_text,
+                    bingo_text.get_rect(center=(SCREEN_W // 2, BOARD_BOTTOM_Y + 125)),
+                )
+
+        score_txt = self.font.render(f"Score: {board.score:.2f}", True, TEXT_COLOR)
+        self.screen.blit(score_txt, (16, 16))
+        elapsed_seconds = board.elapsed_seconds(now)
+        minutes, seconds = divmod(elapsed_seconds, 60)
+        time_txt = self.small_font.render(
+            f"Time: {minutes:02d}:{seconds:02d}",
+            True,
+            TEXT_COLOR,
+        )
+        self.screen.blit(time_txt, (SCREEN_W - time_txt.get_width() - 16, 20))
+
+        if board.game_over:
+            go_txt = self.big_font.render("GAME OVER", True, (240, 90, 90))
+            self.screen.blit(go_txt, go_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 30)))
+            sc_txt = self.font.render(f"Final score: {board.score:.2f}", True, TEXT_COLOR)
+            self.screen.blit(sc_txt, sc_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 20)))
+            if self.leaderboard.rank is not None:
+                rank_txt = self.font.render(f"Global rank: #{self.leaderboard.rank}", True, FALLING_COLOR)
+                self.screen.blit(rank_txt, rank_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 62)))
+            elif self.leaderboard.error:
+                error_txt = self.small_font.render(self.leaderboard.error, True, GRACE_COLOR)
+                self.screen.blit(error_txt, error_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 62)))
+            if self.new_personal_best:
+                best_txt = self.small_font.render("NEW PERSONAL BEST", True, SCORE_POPUP_COLOR)
+                self.screen.blit(best_txt, best_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 125)))
+            r_txt = self.small_font.render("L: leaderboard   R: restart   M: menu", True, TEXT_COLOR)
+            self.screen.blit(r_txt, r_txt.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 95)))
+
+            if self.name_prompt:
+                panel = pygame.Surface((620, 250), pygame.SRCALPHA)
+                panel.fill((18, 18, 24, 245))
+                self.screen.blit(panel, (100, 245))
+                prompt = self.big_font.render("DISPLAY NAME", True, TEXT_COLOR)
+                self.screen.blit(prompt, prompt.get_rect(center=(SCREEN_W // 2, 285)))
+                pygame.draw.rect(self.screen, CELL_EMPTY, (150, 330, 520, 52), border_radius=6)
+                pygame.draw.rect(self.screen, FALLING_COLOR, (150, 330, 520, 52), 2, border_radius=6)
+                shown_name = self.name_input + ("|" if self.name_cursor else "")
+                name_text = self.font.render(shown_name, True, TEXT_COLOR)
+                self.screen.blit(name_text, (170, 340))
+                hint = self.small_font.render("Enter to submit  |  Esc to stay offline", True, TEXT_COLOR)
+                self.screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, 410)))
+
+        if self.state == "paused":
+            self.draw_pause_overlay()
+
+        pygame.display.flip()
+
+    # -- main loop ----------------------------------------------------------
+
+    def run(self):
+        running = True
+        while running:
+            dt = self.clock.tick(FPS) / 1000.0
+            now = pygame.time.get_ticks()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if self.name_prompt:
+                            self.name_prompt = False
+                            if self.state == "name_entry":
+                                self.state = "menu" if self.name_entry_return == "play" else self.name_entry_return
+                        elif self.state in ("leaderboard", "settings"):
+                            self.state = "menu"
+                        elif self.state == "game_over":
+                            self.state = "menu"
+                        else:
+                            running = False
+                    elif self.name_prompt and event.key == pygame.K_RETURN:
+                        if self.save_name():
+                            self.name_prompt = False
+                            if self.name_entry_return in ("menu", "settings"):
+                                self.state = self.name_entry_return
+                            elif self.name_entry_return == "play":
+                                self.reset()
+                            else:
+                                self.start_submission()
+                    elif self.name_prompt and event.key == pygame.K_BACKSPACE:
+                        self.name_input = self.name_input[:-1]
+                    elif self.name_prompt and event.unicode.isprintable():
+                        self.name_input = (self.name_input + event.unicode)[:16]
+                    elif event.key == pygame.K_p and self.state in ("playing", "paused"):
+                        if self.state == "playing":
+                            if self.dragging is not None:
+                                self.dragging.dragging = False
+                                self.dragging = None
+                            self.board.pause(now)
+                            self.state = "paused"
+                        else:
+                            self.board.resume(now)
+                            self.state = "playing"
+                    elif event.key == pygame.K_r and self.state == "game_over":
+                        self.prompt_for_new_game()
+                    elif event.key == pygame.K_l and self.state == "game_over":
+                        self.open_leaderboard()
+                    elif event.key == pygame.K_m and self.state == "game_over":
+                        self.state = "menu"
+                    elif event.key == pygame.K_SPACE and self.state == "playing":
+                        self.confirm_hovered_segment()
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if self.state == "menu":
+                        if self.button_rect(0).collidepoint(event.pos):
+                            self.reset()
+                        elif self.button_rect(1).collidepoint(event.pos):
+                            self.open_leaderboard()
+                        elif self.button_rect(2).collidepoint(event.pos):
+                            self.state = "settings"
+                        elif self.button_rect(3).collidepoint(event.pos):
+                            running = False
+                    elif self.state == "leaderboard" and pygame.Rect(260, 700, 300, 52).collidepoint(event.pos):
+                        self.state = "menu"
+                    elif self.state == "settings":
+                        if pygame.Rect(90, 285, 640, 54).collidepoint(event.pos):
+                            self.leaderboard.profile["public"] = not self.leaderboard.profile["public"]
+                            self.leaderboard.save_profile()
+                        elif pygame.Rect(90, 365, 640, 54).collidepoint(event.pos):
+                            self.name_input = self.leaderboard.profile["player_name"]
+                            self.name_prompt = True
+                            self.name_entry_return = "settings"
+                            self.state = "name_entry"
+                        elif pygame.Rect(90, 435, 640, 70).collidepoint(event.pos):
+                            volume = (event.pos[0] - 260) / 430
+                            self.audio_volume = max(0.0, min(1.0, volume))
+                            self.audio_muted = False
+                            self.apply_audio_settings()
+                            self.save_audio_settings()
+                        elif pygame.Rect(90, 525, 640, 54).collidepoint(event.pos):
+                            self.audio_muted = not self.audio_muted
+                            self.apply_audio_settings()
+                            self.save_audio_settings()
+                        elif pygame.Rect(90, 605, 640, 54).collidepoint(event.pos):
+                            self.state = "menu"
+                    elif self.state == "playing":
+                        self.handle_mousedown(event.pos)
+                elif event.type == pygame.MOUSEMOTION:
+                    if self.state == "playing":
+                        self.handle_mousemove(event.pos)
+                elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    if self.state == "playing":
+                        self.handle_mouseup(event.pos)
+
+            was_game_over = self.board.game_over
+            if self.state == "playing":
+                self.board.update(dt, now)
+            if self.board.game_over and not was_game_over:
+                self.state = "game_over"
+                if self.leaderboard.profile["player_name"]:
+                    self.start_submission()
+                else:
+                    self.name_prompt = True
+            if self.state == "game_over" and self.leaderboard.profile["player_name"]:
+                self.start_submission()
+            self.play_board_sounds()
+            self.draw()
+
+        pygame.quit()
+        sys.exit()
+
+
+if __name__ == "__main__":
+    Game().run()

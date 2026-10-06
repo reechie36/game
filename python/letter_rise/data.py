@@ -6,6 +6,7 @@ import random
 import pandas as pd
 
 from .config import (
+    DATA_DIR,
     LETTER_POINT_COLORS,
     PROJECT_DIR,
     ROW_LEN,
@@ -13,10 +14,18 @@ from .config import (
 )
 
 # Runtime datasets: merged vocabulary tiers and Scrabble letter values.
-DATASET = pd.read_csv(os.path.join(PROJECT_DIR, "merged.csv"))
-LETTER_POINTS_DATASET = pd.read_csv(
-    os.path.join(PROJECT_DIR, "scrabble_letter_points.csv")
+dataset_path = (
+    os.path.join(DATA_DIR, "merged.csv")
+    if os.path.exists(os.path.join(DATA_DIR, "merged.csv"))
+    else os.path.join(PROJECT_DIR, "merged.csv")
 )
+points_path = (
+    os.path.join(DATA_DIR, "scrabble_letter_points.csv")
+    if os.path.exists(os.path.join(DATA_DIR, "scrabble_letter_points.csv"))
+    else os.path.join(PROJECT_DIR, "scrabble_letter_points.csv")
+)
+DATASET = pd.read_csv(dataset_path)
+LETTER_POINTS_DATASET = pd.read_csv(points_path)
 
 WORD_TIERS = {
     str(word).strip().lower(): int(tier)

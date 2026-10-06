@@ -1,0 +1,15 @@
+{
+  "name": "letter-rise-web",
+  "version": "1.0.0",
+  "description": "Letter Rise - Web Edition",
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/dev_server.mjs",
+    "build": "node tools/generate_env.mjs",
+    "test": "node tools/test_parity.mjs",
+    "start": "node tools/dev_server.mjs"
+  },
+  "keywords": ["game", "word-game", "canvas", "web-audio", "supabase"],
+  "author": "",
+  "license": "MIT"
+}
