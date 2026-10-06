@@ -34,6 +34,7 @@ export class UIManager {
     this.gameoverOverlay = document.getElementById("gameover-overlay");
 
     this.actionBar = document.getElementById("action-bar");
+    this.confirmHint = document.getElementById("confirm-hint");
     this.confirmBtn = document.getElementById("confirm-btn");
     this.pauseBtnHud = document.getElementById("pause-btn-hud");
 
@@ -170,10 +171,14 @@ export class UIManager {
   setSegmentCandidate(candidate) {
     if (!candidate || !candidate.word) {
       this.confirmBtn.textContent = "SPACE TO CONFIRM";
+      this.confirmBtn.setAttribute("aria-label", "Select a word to confirm");
+      this.confirmHint.textContent = "Tap a word twice to confirm";
       this.confirmBtn.classList.remove("active");
     } else {
       const upper = candidate.word.toUpperCase();
       this.confirmBtn.textContent = `CONFIRM "${upper}"`;
+      this.confirmBtn.setAttribute("aria-label", `Confirm word ${upper}`);
+      this.confirmHint.textContent = `Tap "${upper}" twice, or tap confirm`;
       this.confirmBtn.classList.add("active");
     }
   }

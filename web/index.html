@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Letter Rise</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -11,12 +11,13 @@
     <div id="stack-line-bg" aria-hidden="true"></div>
     <div id="danger-line-bg" aria-hidden="true"></div>
     <div id="game-wrapper">
-      <canvas id="game-canvas"></canvas>
+      <canvas id="game-canvas" aria-label="Letter Rise game board"></canvas>
 
       <!-- In-game Action HUD -->
       <button id="pause-btn-hud" class="pause-btn-hud" style="display: none;">PAUSE (P)</button>
       <div id="action-bar" style="display: none;">
-        <button id="confirm-btn" class="confirm-btn">SPACE TO CONFIRM</button>
+        <p id="confirm-hint" class="confirm-hint" aria-live="polite">Tap a word twice to confirm</p>
+        <button id="confirm-btn" class="confirm-btn" type="button">SPACE TO CONFIRM</button>
       </div>
 
       <!-- Menu Overlay -->
