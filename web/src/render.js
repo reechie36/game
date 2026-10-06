@@ -12,6 +12,8 @@ import {
   DELETION_ZONE_HEIGHT,
   FALLING_DIAMETER,
   FALLING_RADIUS,
+  MULTIPLIER_COLOR,
+  MULTIPLIER_GLOW_COLOR,
   ROW_LEN,
   SCORE_POPUP_INTRO_MS,
   SCORE_POPUP_MS,
@@ -117,14 +119,17 @@ export class Renderer {
     ctx.font = `bold 30px ${this.fontFamily}`;
     for (const fl of board.falling) {
       if (fl.dragging) continue;
-      const col = letterColor(fl.letter, false);
-      ctx.fillStyle = rgbStr(col);
-      ctx.beginPath();
-      ctx.arc(fl.x, fl.y, FALLING_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "rgb(30, 30, 30)";
-      ctx.fillText(fl.letter.toUpperCase(), fl.x, fl.y + 1);
+      if (fl.value) {
+        this.drawMultiplierToken(fl.x, fl.y, fl.value);
+      } else {
+        const col = letterColor(fl.letter, false);
+        ctx.fillStyle = rgbStr(col);
+        ctx.beginPath();
+        ctx.arc(fl.x, fl.y, FALLING_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgb(30, 30, 30)";
+        ctx.fillText(fl.letter.toUpperCase(), fl.x, fl.y + 1);
+      }
     }
 
     // 5. Deletion zone background & Masking gradient
@@ -215,21 +220,35 @@ export class Renderer {
           ctx.textAlign = "center";
           ctx.fillText(row.cells[c].toUpperCase(), rect.x + rect.width / 2, rect.y + rect.height / 2 + 1);
         }
+        if (row.multiplier_cols.has(c)) {
+          ctx.strokeStyle = rgbStr(MULTIPLIER_COLOR);
+          ctx.lineWidth = 3;
+          this.drawRoundRect(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4, 5);
+          ctx.stroke();
+          ctx.fillStyle = rgbStr(MULTIPLIER_GLOW_COLOR);
+          ctx.font = `bold 14px ${this.fontFamily}`;
+          ctx.textAlign = "right";
+          ctx.fillText(`${row.multiplier_cols.get(c)}x`, rect.x + rect.width - 5, rect.y + 10);
+          ctx.textAlign = "center";
+        }
       }
     }
 
     // 8. Draw letter currently being dragged (above all grid elements)
     if (draggedLetter !== null) {
-      const col = letterColor(draggedLetter.letter, true);
-      ctx.fillStyle = rgbStr(col);
-      ctx.beginPath();
-      ctx.arc(draggedLetter.x, draggedLetter.y, FALLING_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "rgb(30, 30, 30)";
-      ctx.font = `bold 30px ${this.fontFamily}`;
-      ctx.textAlign = "center";
-      ctx.fillText(draggedLetter.letter.toUpperCase(), draggedLetter.x, draggedLetter.y + 1);
+      if (draggedLetter.value) {
+        this.drawMultiplierToken(draggedLetter.x, draggedLetter.y, draggedLetter.value);
+      } else {
+        const col = letterColor(draggedLetter.letter, true);
+        ctx.fillStyle = rgbStr(col);
+        ctx.beginPath();
+        ctx.arc(draggedLetter.x, draggedLetter.y, FALLING_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgb(30, 30, 30)";
+        ctx.font = `bold 30px ${this.fontFamily}`;
+        ctx.textAlign = "center";
+        ctx.fillText(draggedLetter.letter.toUpperCase(), draggedLetter.x, draggedLetter.y + 1);
+      }
     }
 
     // 9. Grace period overlay heartbeat pulse
@@ -257,6 +276,7 @@ export class Renderer {
       if (age < SCORE_POPUP_INTRO_MS) {
         popupAlpha = 1.0;
         popupText = `${popup.base_points} x ${popup.multiplier}`;
+        for (const value of popup.multiplier_values) popupText += ` x${value}`;
         if (popup.bingo) {
           popupText += ` x${BINGO_BONUS_MULTIPLIER}`;
         }
@@ -316,5 +336,24 @@ export class Renderer {
       ctx.fillText("R: restart   M: menu   L: leaderboard", SCREEN_W / 2, SCREEN_H / 2 + 95);
       ctx.restore();
     }
+  }
+
+  drawMultiplierToken(x, y, value) {
+    const ctx = this.ctx;
+    ctx.fillStyle = rgbStr(MULTIPLIER_GLOW_COLOR);
+    ctx.strokeStyle = rgbStr(MULTIPLIER_COLOR);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y - FALLING_RADIUS);
+    ctx.lineTo(x + FALLING_RADIUS, y);
+    ctx.lineTo(x, y + FALLING_RADIUS);
+    ctx.lineTo(x - FALLING_RADIUS, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgb(30, 30, 30)";
+    ctx.font = `bold 24px ${this.fontFamily}`;
+    ctx.textAlign = "center";
+    ctx.fillText(`${value}x`, x, y + 1);
   }
 }

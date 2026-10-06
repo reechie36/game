@@ -16,12 +16,17 @@ export const BUFFER_LINE_Y = 106; // top edge of danger zone that triggers grace
 export const SPAWN_Y = 20;
 
 export const MAX_FALLING = 15;
+export const MAX_MULTIPLIER_TOKENS = 1;
+export const MULTIPLIER_SPAWN_CHECK_MS = 1000;
+export const MULTIPLIER_SPAWN_CHANCE = 0.025;
 export const SPAWN_INTERVAL_MS = 1000;
 export const MIN_SPAWN_INTERVAL_MS = 250;
 export const SPAWN_INTERVAL_STEP_MS = 50;
 export const FALL_SPEED = 40.0; // px / sec
 export const FALLING_RADIUS = Math.floor(CELL / 2) - 6; // 26
 export const FALLING_DIAMETER = FALLING_RADIUS * 2; // 52
+export const MULTIPLIER_COLOR = [255, 215, 70];
+export const MULTIPLIER_GLOW_COLOR = [255, 240, 150];
 export const DELETION_ZONE_HEIGHT = CELL * 2; // 128
 
 export const ROW_GROWTH_INTERVAL_MS = 17500;

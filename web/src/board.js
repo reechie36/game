@@ -15,6 +15,9 @@ import {
   FALLING_RADIUS,
   GRACE_PERIOD_MS,
   MAX_FALLING,
+  MAX_MULTIPLIER_TOKENS,
+  MULTIPLIER_SPAWN_CHANCE,
+  MULTIPLIER_SPAWN_CHECK_MS,
   MIN_ROW_GROWTH_INTERVAL_MS,
   MIN_SPAWN_INTERVAL_MS,
   ROW_FLICKER_MS,
@@ -43,6 +46,7 @@ import {
 export class Row {
   constructor() {
     this.cells = new Array(ROW_LEN).fill(null); // each entry: letter char (lowercase) or null
+    this.multiplier_cols = new Map(); // columns with a 2x or 3x token
     this.hole_cols = new Set(); // columns freshly vacated (visual only)
     this.locked_cols = new Set();
     this.scored_cols = new Set();
@@ -81,11 +85,21 @@ export class FallingLetter {
   }
 }
 
+export class MultiplierToken {
+  constructor(value, x, y) {
+    this.value = value;
+    this.x = x;
+    this.y = y;
+    this.dragging = false;
+    this.origin = "fall";
+  }
+}
+
 /**
  * Transient score notification after a word is confirmed.
  */
 export class ScorePopup {
-  constructor(base_points, multiplier, points, tier, bingo, x, y, created_at) {
+  constructor(base_points, multiplier, points, tier, bingo, x, y, created_at, multiplier_values = []) {
     this.base_points = base_points;
     this.multiplier = multiplier;
     this.points = points;
@@ -94,6 +108,7 @@ export class ScorePopup {
     this.x = x;
     this.y = y;
     this.created_at = created_at;
+    this.multiplier_values = multiplier_values;
   }
 }
 
@@ -111,6 +126,7 @@ export class Board {
     this.paused_at = null;
     this.paused_ms = 0;
     this.last_spawn = this.started_at;
+    this.last_multiplier_spawn_check = this.started_at;
     this.last_growth = this.started_at;
     this.grace_active = false;
     this.grace_end = 0;
@@ -219,6 +235,19 @@ export class Board {
     this.falling.push(new FallingLetter(randomLetter(), x, SPAWN_Y));
   }
 
+  maybe_spawn_multiplier(now) {
+    const tokenCount = this.falling.filter((fl) => fl instanceof MultiplierToken).length;
+    if (tokenCount >= MAX_MULTIPLIER_TOKENS) return;
+    if (now - this.last_multiplier_spawn_check < MULTIPLIER_SPAWN_CHECK_MS) return;
+    this.last_multiplier_spawn_check = now;
+    if (Math.random() >= MULTIPLIER_SPAWN_CHANCE) return;
+    const value = Math.random() < 0.7 ? 2 : 3;
+    const minX = Math.floor(CELL / 2);
+    const maxX = SCREEN_W - Math.floor(CELL / 2);
+    const x = Math.floor(Math.random() * (maxX - minX + 1)) + minX;
+    this.falling.push(new MultiplierToken(value, x, SPAWN_Y));
+  }
+
   separate_falling_letters() {
     for (let iter = 0; iter < 12; iter++) {
       for (let index = 0; index < this.falling.length; index++) {
@@ -266,6 +295,7 @@ export class Board {
 
     this.maybe_grow(now);
     this.maybe_spawn(now);
+    this.maybe_spawn_multiplier(now);
     this.update_row_resolutions(now);
     this.score_popups = this.score_popups.filter(
       (popup) => now - popup.created_at < SCORE_POPUP_MS
@@ -357,6 +387,11 @@ export class Board {
         base_points += LETTER_POINTS[letter] || 1;
       }
       let points = base_points * multiplier;
+      const multiplier_values = [];
+      for (let col = start; col <= end; col++) {
+        if (row.multiplier_cols.has(col)) multiplier_values.push(row.multiplier_cols.get(col));
+      }
+      for (const value of multiplier_values) points *= value;
       const bingo = word.length === ROW_LEN;
       if (bingo) {
         points *= BINGO_BONUS_MULTIPLIER;
@@ -378,12 +413,14 @@ export class Board {
           bingo,
           BOARD_LEFT + ((start + end + 1) * CELL + (start + end) * CELL_GAP) / 2,
           this.row_top_y(row_index) + CELL / 2,
-          now
+          now,
+          multiplier_values
         )
       );
 
       for (let col = start; col <= end; col++) {
         row.cells[col] = null;
+        row.multiplier_cols.delete(col);
         row.hole_cols.add(col);
         row.scored_cols.add(col);
       }

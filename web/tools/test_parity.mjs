@@ -120,6 +120,7 @@ async function runTests() {
   row0.cells[1] = "x";
   row0.cells[2] = "x";
   simBoard.try_clear_segment(0, 0, 2, 0);
+  row0.multiplier_cols.set(1, 2);
   assert.equal(row0.resolution_phase, "hold");
   simBoard.update(0.1, 350);
   assert.equal(row0.resolution_phase, "flicker");
@@ -128,12 +129,14 @@ async function runTests() {
   assert.ok(row0.isLocked(0), "Cell 0 should be locked after invalid word");
   assert.ok(row0.isLocked(1), "Cell 1 should be locked after invalid word");
   assert.ok(row0.isLocked(2), "Cell 2 should be locked after invalid word");
+  assert.equal(row0.multiplier_cols.get(1), 2, "Invalid words should preserve multiplier tokens");
   console.log("  ✓ Invalid segment locks cells properly");
 
   // Test valid segment next to locked cells and unlocking
   row0.cells[3] = "c";
   row0.cells[4] = "a";
   row0.cells[5] = "t";
+  row0.multiplier_cols.set(4, 3);
   simBoard.try_clear_segment(0, 3, 5, 600);
   simBoard.update(0.1, 950);
   simBoard.update(0.1, 1150);
@@ -143,6 +146,8 @@ async function runTests() {
   assert.ok(row0.scored_cols.has(4), "Cell 4 should be scored");
   assert.ok(row0.scored_cols.has(5), "Cell 5 should be scored");
   assert.ok(simBoard.score > 0, "Score should have increased");
+  assert.equal(simBoard.score, 15, "A 3x token should multiply the valid word score");
+  assert.equal(row0.multiplier_cols.has(4), false, "Scored multiplier tokens should be consumed");
   console.log(`  ✓ Adjacent unlocking and scoring verified (score: ${simBoard.score.toFixed(2)})`);
 
   // 6. Test weighted random letter sampling

@@ -3,7 +3,7 @@
  */
 
 import { CELL, ROW_LEN, SCREEN_H, SCREEN_W } from "./config.js";
-import { FallingLetter } from "./board.js";
+import { FallingLetter, MultiplierToken } from "./board.js";
 
 export class InputHandler {
   constructor(canvas, board, options = {}) {
@@ -148,7 +148,7 @@ export class InputHandler {
     this.lastTapTime = now;
     this.lastTapCell = cell;
 
-    // Check if clicked a falling letter
+    // Check if clicked a falling entity
     const fl = this.findFallingAt(pos);
     if (fl) {
       fl.dragging = true;
@@ -168,12 +168,20 @@ export class InputHandler {
         row.resolution_phase === null &&
         !row.isLocked(c) &&
         !row.scored_cols.has(c) &&
-        row.cells[c] !== null
+        (row.cells[c] !== null || row.multiplier_cols.has(c))
       ) {
-        const letter = row.cells[c];
-        row.cells[c] = null;
-        row.hole_cols.delete(c);
-        const newFl = new FallingLetter(letter, pos[0], pos[1]);
+        let newFl;
+        if (row.multiplier_cols.has(c)) {
+          const value = row.multiplier_cols.get(c);
+          row.multiplier_cols.delete(c);
+          newFl = new MultiplierToken(value, pos[0], pos[1]);
+        } else if (row.cells[c] !== null) {
+          const letter = row.cells[c];
+          row.cells[c] = null;
+          row.hole_cols.delete(c);
+          newFl = new FallingLetter(letter, pos[0], pos[1]);
+        }
+        if (!newFl) return;
         newFl.dragging = true;
         newFl.origin = "grid";
         this.dragging = newFl;
@@ -227,6 +235,18 @@ export class InputHandler {
         !row.isLocked(c) &&
         !row.scored_cols.has(c)
       ) {
+        if (fl instanceof MultiplierToken) {
+          if (row.multiplier_cols.has(c) || [...row.multiplier_cols.values()].includes(fl.value)) {
+            fl.x = pos[0];
+            fl.y = pos[1];
+            fl.dragging = false;
+            return;
+          }
+          row.multiplier_cols.set(c, fl.value);
+          const idx = this.board.falling.indexOf(fl);
+          if (idx !== -1) this.board.falling.splice(idx, 1);
+          return;
+        }
         if (row.cells[c] === null) {
           row.cells[c] = fl.letter;
           row.hole_cols.delete(c);

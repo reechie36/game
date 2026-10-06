@@ -10,7 +10,7 @@ from .board import Board
 from .config import *
 from .data import TIER_NAMES, WORD_TIERS, calculate_word_score, letter_color, tier_color
 from .leaderboard import LeaderboardClient
-from .models import FallingLetter
+from .models import FallingLetter, MultiplierToken
 
 class Game:
     def __init__(self):
@@ -325,12 +325,18 @@ class Game:
                 row.resolution_phase is None
                 and not row.is_locked(c)
                 and c not in row.scored_cols
-                and row.cells[c] is not None
+                and (row.cells[c] is not None or c in row.multiplier_cols)
             ):
-                letter = row.cells[c]
-                row.cells[c] = None
-                row.hole_cols.discard(c)
-                fl = FallingLetter(letter, pos[0], pos[1])
+                if c in row.multiplier_cols:
+                    value = row.multiplier_cols.pop(c)
+                    fl = MultiplierToken(value, pos[0], pos[1])
+                elif row.cells[c] is not None:
+                    letter = row.cells[c]
+                    row.cells[c] = None
+                    row.hole_cols.discard(c)
+                    fl = FallingLetter(letter, pos[0], pos[1])
+                else:
+                    return
                 fl.dragging = True
                 fl.origin = "grid"
                 self.dragging = fl
@@ -359,6 +365,15 @@ class Game:
                 and not row.is_locked(c)
                 and c not in row.scored_cols
             ):
+                if isinstance(fl, MultiplierToken):
+                    if c in row.multiplier_cols or fl.value in row.multiplier_cols.values():
+                        fl.x, fl.y = pos
+                        fl.dragging = False
+                        return
+                    row.multiplier_cols[c] = fl.value
+                    if fl in self.board.falling:
+                        self.board.falling.remove(fl)
+                    return
                 if row.cells[c] is None:
                     row.cells[c] = fl.letter
                     row.hole_cols.discard(c)
@@ -453,10 +468,21 @@ class Game:
         for fl in board.falling:
             if fl.dragging:
                 continue
-            color = letter_color(fl.letter, fl.dragging)
-            pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
-            txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
-            self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
+            if isinstance(fl, MultiplierToken):
+                center = (int(fl.x), int(fl.y))
+                points = [(center[0], center[1] - FALLING_RADIUS),
+                          (center[0] + FALLING_RADIUS, center[1]),
+                          (center[0], center[1] + FALLING_RADIUS),
+                          (center[0] - FALLING_RADIUS, center[1])]
+                pygame.draw.polygon(self.screen, MULTIPLIER_GLOW_COLOR, points)
+                pygame.draw.polygon(self.screen, MULTIPLIER_COLOR, points, 3)
+                txt = self.font.render(f"{fl.value}x", True, (30, 30, 30))
+                self.screen.blit(txt, txt.get_rect(center=center))
+            else:
+                color = letter_color(fl.letter, fl.dragging)
+                pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
+                txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
+                self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
 
         deletion_zone = pygame.Rect(
             0,
@@ -538,16 +564,31 @@ class Game:
                 if row.cells[c] is not None:
                     txt = self.font.render(row.cells[c].upper(), True, letter_color(row.cells[c]))
                     self.screen.blit(txt, txt.get_rect(center=rect.center))
+                if c in row.multiplier_cols:
+                    pygame.draw.rect(self.screen, MULTIPLIER_COLOR, rect, 3, border_radius=6)
+                    token_txt = self.small_font.render(f"{row.multiplier_cols[c]}x", True, MULTIPLIER_GLOW_COLOR)
+                    self.screen.blit(token_txt, token_txt.get_rect(topright=(rect.right - 4, rect.top + 3)))
 
         # Keep the letter being dragged above the boundary, grid, and every
         # other board element so it remains visible throughout the drag.
         for fl in board.falling:
             if not fl.dragging:
                 continue
-            color = letter_color(fl.letter, dragging=True)
-            pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
-            txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
-            self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
+            if isinstance(fl, MultiplierToken):
+                center = (int(fl.x), int(fl.y))
+                points = [(center[0], center[1] - FALLING_RADIUS),
+                          (center[0] + FALLING_RADIUS, center[1]),
+                          (center[0], center[1] + FALLING_RADIUS),
+                          (center[0] - FALLING_RADIUS, center[1])]
+                pygame.draw.polygon(self.screen, MULTIPLIER_GLOW_COLOR, points)
+                pygame.draw.polygon(self.screen, MULTIPLIER_COLOR, points, 3)
+                txt = self.font.render(f"{fl.value}x", True, (30, 30, 30))
+                self.screen.blit(txt, txt.get_rect(center=center))
+            else:
+                color = letter_color(fl.letter, dragging=True)
+                pygame.draw.circle(self.screen, color, (int(fl.x), int(fl.y)), FALLING_RADIUS)
+                txt = self.font.render(fl.letter.upper(), True, (30, 30, 30))
+                self.screen.blit(txt, txt.get_rect(center=(int(fl.x), int(fl.y))))
 
         if board.grace_active and not board.game_over:
             beat_period_ms = 60_000 / 80
@@ -570,6 +611,8 @@ class Game:
             if age < SCORE_POPUP_INTRO_MS:
                 popup_alpha = 255
                 popup_text = f"{popup.base_points:g} x {popup.multiplier:g}"
+                for value in popup.multiplier_values:
+                    popup_text += f" x{value:g}"
                 if popup.bingo:
                     popup_text += f" x{BINGO_BONUS_MULTIPLIER:g}"
             else:

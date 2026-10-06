@@ -62,12 +62,17 @@ BUFFER_LINE_Y = 106         # top edge of the row that starts the grace period
 SPAWN_Y = 20                 # falling letters spawn just below the top edge
 
 MAX_FALLING = 15
+MAX_MULTIPLIER_TOKENS = 1
+MULTIPLIER_SPAWN_CHECK_MS = 1000
+MULTIPLIER_SPAWN_CHANCE = 0.025
 SPAWN_INTERVAL_MS = 1000
 MIN_SPAWN_INTERVAL_MS = 250
 SPAWN_INTERVAL_STEP_MS = 50
 FALL_SPEED = 40.0            # px / second, eased down as stack rises (see update)
 FALLING_RADIUS = CELL // 2 - 6
 FALLING_DIAMETER = FALLING_RADIUS * 2
+MULTIPLIER_COLOR = (255, 215, 70)
+MULTIPLIER_GLOW_COLOR = (255, 240, 150)
 DELETION_ZONE_HEIGHT = CELL * 2
 
 ROW_GROWTH_INTERVAL_MS = 17_500 

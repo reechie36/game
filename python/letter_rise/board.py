@@ -29,6 +29,9 @@ from .config import (
     SPAWN_INTERVAL_MS,
     SPAWN_INTERVAL_STEP_MS,
     SPAWN_Y,
+    MAX_MULTIPLIER_TOKENS,
+    MULTIPLIER_SPAWN_CHANCE,
+    MULTIPLIER_SPAWN_CHECK_MS,
 )
 from .data import (
     LETTER_POINTS,
@@ -38,7 +41,7 @@ from .data import (
     random_letter,
 )
 from .config import BINGO_BONUS_MULTIPLIER
-from .models import FallingLetter, Row, ScorePopup
+from .models import FallingLetter, MultiplierToken, Row, ScorePopup
 
 class Board:
     def __init__(self):
@@ -51,6 +54,7 @@ class Board:
         self.paused_at = None
         self.paused_ms = 0
         self.last_spawn = self.started_at
+        self.last_multiplier_spawn_check = self.started_at
         self.last_growth = self.started_at
         self.grace_active = False
         self.grace_end = 0
@@ -135,6 +139,19 @@ class Board:
         x = random.randint(CELL // 2, SCREEN_W - CELL // 2)
         self.falling.append(FallingLetter(random_letter(), x, SPAWN_Y))
 
+    def maybe_spawn_multiplier(self, now):
+        token_count = sum(isinstance(fl, MultiplierToken) for fl in self.falling)
+        if token_count >= MAX_MULTIPLIER_TOKENS:
+            return
+        if now - self.last_multiplier_spawn_check < MULTIPLIER_SPAWN_CHECK_MS:
+            return
+        self.last_multiplier_spawn_check = now
+        if random.random() >= MULTIPLIER_SPAWN_CHANCE:
+            return
+        value = 2 if random.random() < 0.7 else 3
+        x = random.randint(CELL // 2, SCREEN_W - CELL // 2)
+        self.falling.append(MultiplierToken(value, x, SPAWN_Y))
+
     def separate_falling_letters(self):
         for _ in range(12):
             for index, first in enumerate(self.falling):
@@ -173,6 +190,7 @@ class Board:
 
         self.maybe_grow(now)
         self.maybe_spawn(now)
+        self.maybe_spawn_multiplier(now)
         self.update_row_resolutions(now)
         self.score_popups = [
             popup for popup in self.score_popups
@@ -249,6 +267,13 @@ class Board:
             multiplier = TIER_MULTIPLIERS[tier]
             base_points = sum(LETTER_POINTS[letter] for letter in word.upper())
             points = base_points * multiplier
+            multiplier_values = [
+                row.multiplier_cols[col]
+                for col in range(start, end + 1)
+                if col in row.multiplier_cols
+            ]
+            for value in multiplier_values:
+                points *= value
             bingo = len(word) == ROW_LEN
             if bingo:
                 points *= BINGO_BONUS_MULTIPLIER
@@ -265,9 +290,11 @@ class Board:
                 BOARD_LEFT + ((start + end + 1) * CELL + (start + end) * CELL_GAP) / 2,
                 self.row_top_y(row_index) + CELL / 2,
                 now,
+                multiplier_values,
             ))
             for col in range(start, end + 1):
                 row.cells[col] = None
+                row.multiplier_cols.pop(col, None)
                 row.hole_cols.add(col)
             row.scored_cols.update(range(start, end + 1))
             self.unlock_adjacent_locked_cells(row, start, end)

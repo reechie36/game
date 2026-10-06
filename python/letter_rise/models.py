@@ -7,6 +7,7 @@ class Row:
 
     def __init__(self):
         self.cells = [None] * ROW_LEN     # each entry: letter char or None
+        self.multiplier_cols = {}         # columns with a 2x or 3x token
         self.hole_cols = set()             # columns freshly vacated (visual only)
         self.locked_cols = set()
         self.scored_cols = set()
@@ -38,8 +39,17 @@ class FallingLetter:
         self.origin = "fall"
 
 
+class MultiplierToken:
+    def __init__(self, value, x, y):
+        self.value = value
+        self.x = x
+        self.y = y
+        self.dragging = False
+        self.origin = "fall"
+
+
 class ScorePopup:
-    def __init__(self, base_points, multiplier, points, tier, bingo, x, y, created_at):
+    def __init__(self, base_points, multiplier, points, tier, bingo, x, y, created_at, multiplier_values=None):
         self.base_points = base_points
         self.multiplier = multiplier
         self.points = points
@@ -48,5 +58,6 @@ class ScorePopup:
         self.x = x
         self.y = y
         self.created_at = created_at
+        self.multiplier_values = multiplier_values or []
 
 
