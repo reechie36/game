@@ -8,6 +8,7 @@ import { BINGO_BONUS_MULTIPLIER, ROW_LEN } from "./config.js";
 export class UIManager {
   constructor(options = {}) {
     this.onPlay = options.onPlay || (() => {});
+    this.onMenuNameSubmit = options.onMenuNameSubmit || (() => false);
     this.onLeaderboard = options.onLeaderboard || (() => {});
     this.onSettings = options.onSettings || (() => {});
     this.onNameSubmit = options.onNameSubmit || (() => {});
@@ -41,6 +42,9 @@ export class UIManager {
     this.btnMenuPlay = document.getElementById("btn-menu-play");
     this.btnMenuLeaderboard = document.getElementById("btn-menu-leaderboard");
     this.btnMenuSettings = document.getElementById("btn-menu-settings");
+    this.menuNameForm = document.getElementById("menu-name-form");
+    this.menuPlayerNameInput = document.getElementById("menu-player-name-input");
+    this.menuNameStatus = document.getElementById("menu-name-status");
 
     // Name
     this.nameForm = document.getElementById("name-form");
@@ -80,6 +84,13 @@ export class UIManager {
     this.btnMenuPlay.addEventListener("click", () => this.onPlay());
     this.btnMenuLeaderboard.addEventListener("click", () => this.onLeaderboard());
     this.btnMenuSettings.addEventListener("click", () => this.onSettings());
+    this.menuNameForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const saved = this.onMenuNameSubmit(this.menuPlayerNameInput.value);
+      this.menuNameStatus.textContent = saved
+        ? "Username saved."
+        : "Please choose a valid username.";
+    });
 
     this.nameForm.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -165,6 +176,13 @@ export class UIManager {
       ? "SOUND: MUTED"
       : `SOUND: ${Math.round(profile.sound_volume * 100)}%`;
     this.btnSettingsMute.textContent = profile.sound_muted ? "UNMUTE SOUND" : "MUTE SOUND";
+  }
+
+  updateMenuUI(profile) {
+    this.menuPlayerNameInput.value = profile.player_name;
+    this.menuNameStatus.textContent = profile.player_name
+      ? "Username saved."
+      : "Enter a name for leaderboard scores.";
   }
 
   setSegmentCandidate(candidate) {

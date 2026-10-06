@@ -36,6 +36,7 @@ class GameApp {
 
     this.ui = new UIManager({
       onPlay: () => this.handlePlayClick(),
+      onMenuNameSubmit: (name) => this.handleMenuNameSubmit(name),
       onLeaderboard: () => this.handleOpenLeaderboard(),
       onSettings: () => this.handleOpenSettings(),
       onNameSubmit: (name) => this.handleNameSubmit(name),
@@ -52,6 +53,7 @@ class GameApp {
 
     this.setupGlobalEvents();
     this.ui.updateSettingsUI(this.profileManager.profile);
+    this.ui.updateMenuUI(this.profileManager.profile);
     this.ui.showState("menu");
   }
 
@@ -127,6 +129,15 @@ class GameApp {
     } else {
       this.startNewGame();
     }
+  }
+
+  handleMenuNameSubmit(name) {
+    const success = this.profileManager.setPlayerName(name);
+    if (success) {
+      this.ui.updateSettingsUI(this.profileManager.profile);
+      this.ui.updateMenuUI(this.profileManager.profile);
+    }
+    return success;
   }
 
   handleNameSubmit(name) {

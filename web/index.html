@@ -21,6 +21,21 @@
       <div id="menu-overlay" class="overlay">
         <div class="overlay-panel">
           <h1 class="title-large">LETTER RISE</h1>
+          <form id="menu-name-form" class="name-form">
+            <label class="hint-text" for="menu-player-name-input">USERNAME</label>
+            <input
+              id="menu-player-name-input"
+              class="input-field"
+              type="text"
+              maxlength="16"
+              placeholder="Your Name"
+              required
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p id="menu-name-status" class="hint-text">Enter a name for leaderboard scores.</p>
+            <button type="submit" class="menu-btn">SAVE USERNAME</button>
+          </form>
           <div class="btn-group">
             <button id="btn-menu-play" class="menu-btn primary">PLAY</button>
             <button id="btn-menu-leaderboard" class="menu-btn">LEADERBOARD</button>
