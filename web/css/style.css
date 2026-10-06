@@ -71,6 +71,27 @@ html, body {
   background-color: var(--bg-color);
 }
 
+#stack-line-bg,
+#danger-line-bg {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: var(--line-height, 2px);
+  pointer-events: none;
+  z-index: 2;
+}
+
+#stack-line-bg {
+  top: var(--stack-line-top, 0px);
+  background: rgba(245, 75, 75, 0.706);
+}
+
+#danger-line-bg {
+  top: var(--danger-line-top, 0px);
+  background: rgb(200, 60, 60);
+  z-index: 0;
+}
+
 #game-wrapper {
   position: relative;
   width: 820px;
@@ -81,6 +102,7 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: center;
+  z-index: 1;
 }
 
 #game-canvas {
