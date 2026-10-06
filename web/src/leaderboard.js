@@ -99,14 +99,18 @@ export class LeaderboardClient {
     this.error = null;
     try {
       const roundedScore = Math.round(score * 100) / 100;
-      const { error: insertError } = await this.client.table("leaderboard").insert({
+      const { error: insertError } = await this.client.from("leaderboard").insert({
         player_name: profile.player_name || "Unknown",
         score: roundedScore,
         rarest_word_found: rarestWord || "-",
         client_id: profile.client_id,
       });
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        throw new Error(`Score submission failed: ${insertError.message}`, {
+          cause: insertError,
+        });
+      }
 
       this.rows = await this.fetchLeaderboard();
       const me = this.rows.find((r) => r.is_me);
@@ -114,7 +118,8 @@ export class LeaderboardClient {
       this.error = null;
     } catch (err) {
       console.error("Leaderboard submit error:", err);
-      this.error = "Couldn't reach leaderboard";
+      const message = err instanceof Error ? err.message : String(err);
+      this.error = message || "Couldn't reach leaderboard";
     } finally {
       this.loading = false;
     }

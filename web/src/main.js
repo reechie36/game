@@ -18,7 +18,6 @@ class GameApp {
     const profile = this.profileManager.profile;
 
     this.audio = new AudioEngine(profile.sound_volume, profile.sound_muted);
-    this.audio.preloadAll().catch(() => {});
 
     this.leaderboard = new LeaderboardClient(this.profileManager);
     this.renderer = new Renderer(this.canvas);
@@ -37,11 +36,13 @@ class GameApp {
 
     this.ui = new UIManager({
       onPlay: () => this.handlePlayClick(),
+      onMenuNameSubmit: (name) => this.handleMenuNameSubmit(name),
       onLeaderboard: () => this.handleOpenLeaderboard(),
       onSettings: () => this.handleOpenSettings(),
       onNameSubmit: (name) => this.handleNameSubmit(name),
       onNameCancel: () => this.handleNameCancel(),
       onPublicToggle: () => this.handlePublicToggle(),
+      onThemeChange: (theme) => this.handleThemeChange(theme),
       onVolumeChange: (vol) => this.handleVolumeChange(vol),
       onMuteToggle: () => this.handleMuteToggle(),
       onResume: () => this.resumeGame(),
@@ -53,6 +54,8 @@ class GameApp {
 
     this.setupGlobalEvents();
     this.ui.updateSettingsUI(this.profileManager.profile);
+    this.applyTheme(this.profileManager.profile.theme);
+    this.ui.updateMenuUI(this.profileManager.profile);
     this.ui.showState("menu");
   }
 
@@ -60,6 +63,9 @@ class GameApp {
     // Audio unlock on first user gesture
     const unlockAudio = () => {
       this.audio.ensureContext();
+      this.audio.preloadAll().catch((err) => {
+        console.warn("Could not preload audio:", err);
+      });
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
@@ -127,6 +133,15 @@ class GameApp {
     }
   }
 
+  handleMenuNameSubmit(name) {
+    const success = this.profileManager.setPlayerName(name);
+    if (success) {
+      this.ui.updateSettingsUI(this.profileManager.profile);
+      this.ui.updateMenuUI(this.profileManager.profile);
+    }
+    return success;
+  }
+
   handleNameSubmit(name) {
     const success = this.profileManager.setPlayerName(name);
     if (!success) return;
@@ -178,6 +193,17 @@ class GameApp {
   handlePublicToggle() {
     this.profileManager.togglePublic();
     this.ui.updateSettingsUI(this.profileManager.profile);
+  }
+
+  handleThemeChange(theme) {
+    if (this.profileManager.setTheme(theme)) {
+      this.applyTheme(this.profileManager.profile.theme);
+      this.ui.updateSettingsUI(this.profileManager.profile);
+    }
+  }
+
+  applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
   }
 
   handleVolumeChange(vol) {
