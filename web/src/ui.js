@@ -14,6 +14,7 @@ export class UIManager {
     this.onNameSubmit = options.onNameSubmit || (() => {});
     this.onNameCancel = options.onNameCancel || (() => {});
     this.onPublicToggle = options.onPublicToggle || (() => {});
+    this.onThemeChange = options.onThemeChange || (() => {});
     this.onVolumeChange = options.onVolumeChange || (() => {});
     this.onMuteToggle = options.onMuteToggle || (() => {});
     this.onResume = options.onResume || (() => {});
@@ -55,6 +56,7 @@ export class UIManager {
     this.settingsNameDisplay = document.getElementById("settings-name-display");
     this.btnSettingsEditName = document.getElementById("btn-settings-edit-name");
     this.btnSettingsPublic = document.getElementById("btn-settings-public");
+    this.themeSelect = document.getElementById("theme-select");
     this.volumeSlider = document.getElementById("volume-slider");
     this.volumeLabel = document.getElementById("volume-label");
     this.btnSettingsMute = document.getElementById("btn-settings-mute");
@@ -102,6 +104,7 @@ export class UIManager {
       this.promptName("settings", this.playerNameInput.value);
     });
     this.btnSettingsPublic.addEventListener("click", () => this.onPublicToggle());
+    this.themeSelect.addEventListener("change", (e) => this.onThemeChange(e.target.value));
     this.volumeSlider.addEventListener("input", (e) => {
       this.onVolumeChange(parseFloat(e.target.value));
     });
@@ -176,6 +179,7 @@ export class UIManager {
       ? "SOUND: MUTED"
       : `SOUND: ${Math.round(profile.sound_volume * 100)}%`;
     this.btnSettingsMute.textContent = profile.sound_muted ? "UNMUTE SOUND" : "MUTE SOUND";
+    this.themeSelect.value = profile.theme;
   }
 
   updateMenuUI(profile) {

@@ -3,6 +3,7 @@
  */
 
 const STORAGE_KEY = "letter_rise_profile";
+const THEMES = new Set(["default", "gruvbox-dark", "gruvbox-light"]);
 
 const BLOCKED_WORDS = ["fuck", "shit", "bitch", "cunt", "nigger", "faggot"];
 
@@ -54,6 +55,7 @@ export class ProfileManager {
       personal_best: typeof data.personal_best === "number" ? data.personal_best : 0,
       sound_volume: typeof data.sound_volume === "number" ? data.sound_volume : 0.75,
       sound_muted: typeof data.sound_muted === "boolean" ? data.sound_muted : false,
+      theme: THEMES.has(data.theme) ? data.theme : "default",
     };
   }
 
@@ -87,6 +89,13 @@ export class ProfileManager {
     this.profile.sound_volume = Math.max(0, Math.min(1, volume));
     this.profile.sound_muted = Boolean(muted);
     this.save();
+  }
+
+  setTheme(theme) {
+    if (!THEMES.has(theme)) return false;
+    this.profile.theme = theme;
+    this.save();
+    return true;
   }
 
   togglePublic() {

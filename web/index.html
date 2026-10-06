@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Letter Rise</title>
+  <title>Shuffall</title>
   <link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
@@ -20,21 +20,22 @@
       <!-- Menu Overlay -->
       <div id="menu-overlay" class="overlay">
         <div class="overlay-panel">
-          <h1 class="title-large">LETTER RISE</h1>
+          <h1 class="title-large">Shuffall</h1>
           <form id="menu-name-form" class="name-form">
-            <label class="hint-text" for="menu-player-name-input">USERNAME</label>
-            <input
-              id="menu-player-name-input"
-              class="input-field"
-              type="text"
-              maxlength="16"
-              placeholder="Your Name"
-              required
-              autocomplete="off"
-              spellcheck="false"
-            />
+            <div class="menu-name-row">
+              <input
+                id="menu-player-name-input"
+                class="input-field"
+                type="text"
+                maxlength="16"
+                placeholder="Your Name"
+                required
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button type="submit" class="menu-btn">SAVE</button>
+            </div>
             <p id="menu-name-status" class="hint-text">Enter a name for leaderboard scores.</p>
-            <button type="submit" class="menu-btn">SAVE USERNAME</button>
           </form>
           <div class="btn-group">
             <button id="btn-menu-play" class="menu-btn primary">PLAY</button>
@@ -76,6 +77,14 @@
           <div class="btn-group">
             <button id="btn-settings-edit-name" class="menu-btn">EDIT DISPLAY NAME</button>
             <button id="btn-settings-public" class="menu-btn">GLOBAL SCORES: ON</button>
+            <label class="setting-row" for="theme-select">
+              <span>COLOR THEME</span>
+              <select id="theme-select" class="theme-select">
+                <option value="default">Default</option>
+                <option value="gruvbox-dark">Gruvbox Dark</option>
+                <option value="gruvbox-light">Gruvbox Light</option>
+              </select>
+            </label>
             <div class="setting-row">
               <div class="volume-container">
                 <span id="volume-label" style="font-size: 14px; min-width: 90px;">SOUND: 75%</span>

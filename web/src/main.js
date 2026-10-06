@@ -42,6 +42,7 @@ class GameApp {
       onNameSubmit: (name) => this.handleNameSubmit(name),
       onNameCancel: () => this.handleNameCancel(),
       onPublicToggle: () => this.handlePublicToggle(),
+      onThemeChange: (theme) => this.handleThemeChange(theme),
       onVolumeChange: (vol) => this.handleVolumeChange(vol),
       onMuteToggle: () => this.handleMuteToggle(),
       onResume: () => this.resumeGame(),
@@ -53,6 +54,7 @@ class GameApp {
 
     this.setupGlobalEvents();
     this.ui.updateSettingsUI(this.profileManager.profile);
+    this.applyTheme(this.profileManager.profile.theme);
     this.ui.updateMenuUI(this.profileManager.profile);
     this.ui.showState("menu");
   }
@@ -191,6 +193,17 @@ class GameApp {
   handlePublicToggle() {
     this.profileManager.togglePublic();
     this.ui.updateSettingsUI(this.profileManager.profile);
+  }
+
+  handleThemeChange(theme) {
+    if (this.profileManager.setTheme(theme)) {
+      this.applyTheme(this.profileManager.profile.theme);
+      this.ui.updateSettingsUI(this.profileManager.profile);
+    }
+  }
+
+  applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
   }
 
   handleVolumeChange(vol) {
