@@ -104,16 +104,18 @@ export const TIER_NAMES = {
   8: "Celestial",
 };
 
+const SOUND_BASE_URL = new URL("../assets/sounds/", import.meta.url);
+
 export const SOUND_PATHS = {
-  pickup: "/assets/sounds/dice_grab.wav",
-  place: "/assets/sounds/chips_place_1.wav",
-  confirm: "/assets/sounds/item_equip.wav",
-  success: "/assets/sounds/grand_piano_chime_positive.wav",
-  bingo: "/assets/sounds/coin_jingle_small.wav",
-  error: "/assets/sounds/grand_piano_negative_quick.wav",
-  grow: "/assets/sounds/lock_quick.wav",
-  warning: "/assets/sounds/grand_piano_negative_long.wav",
-  game_over: "/assets/sounds/grand_piano_defeated.wav",
+  pickup: new URL("dice_grab.wav", SOUND_BASE_URL).href,
+  place: new URL("chips_place_1.wav", SOUND_BASE_URL).href,
+  confirm: new URL("item_equip.wav", SOUND_BASE_URL).href,
+  success: new URL("grand_piano_chime_positive.wav", SOUND_BASE_URL).href,
+  bingo: new URL("coin_jingle_small.wav", SOUND_BASE_URL).href,
+  error: new URL("grand_piano_negative_quick.wav", SOUND_BASE_URL).href,
+  grow: new URL("lock_quick.wav", SOUND_BASE_URL).href,
+  warning: new URL("grand_piano_negative_long.wav", SOUND_BASE_URL).href,
+  game_over: new URL("grand_piano_defeated.wav", SOUND_BASE_URL).href,
 };
 
 export const SOUND_FALLBACK_PATHS = {};
