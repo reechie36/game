@@ -1,0 +1,137 @@
+{
+  "word_scores": {
+    "a": {
+      "tier": 1,
+      "score": 1.0,
+      "bingo_score": 1.0
+    },
+    "i": {
+      "tier": 1,
+      "score": 1.0,
+      "bingo_score": 1.0
+    },
+    "the": {
+      "tier": 1,
+      "score": 6.0,
+      "bingo_score": 6.0
+    },
+    "cat": {
+      "tier": 1,
+      "score": 5.0,
+      "bingo_score": 5.0
+    },
+    "word": {
+      "tier": 1,
+      "score": 8.0,
+      "bingo_score": 8.0
+    },
+    "puzzle": {
+      "tier": 1,
+      "score": 26.0,
+      "bingo_score": 26.0
+    },
+    "complex": {
+      "tier": 1,
+      "score": 20.0,
+      "bingo_score": 40.0
+    },
+    "quiz": {
+      "tier": 1,
+      "score": 22.0,
+      "bingo_score": 22.0
+    },
+    "jazz": {
+      "tier": 1,
+      "score": 29.0,
+      "bingo_score": 29.0
+    },
+    "oxygen": {
+      "tier": 1,
+      "score": 17.0,
+      "bingo_score": 17.0
+    }
+  },
+  "intervals": {
+    "0": {
+      "difficulty_steps": 0,
+      "spawn_interval": 1000,
+      "row_growth_interval": 17500
+    },
+    "30": {
+      "difficulty_steps": 0,
+      "spawn_interval": 1000,
+      "row_growth_interval": 17500
+    },
+    "60": {
+      "difficulty_steps": 1,
+      "spawn_interval": 950,
+      "row_growth_interval": 17000
+    },
+    "120": {
+      "difficulty_steps": 2,
+      "spawn_interval": 900,
+      "row_growth_interval": 16500
+    },
+    "300": {
+      "difficulty_steps": 5,
+      "spawn_interval": 750,
+      "row_growth_interval": 15000
+    },
+    "600": {
+      "difficulty_steps": 10,
+      "spawn_interval": 500,
+      "row_growth_interval": 12500
+    },
+    "1200": {
+      "difficulty_steps": 20,
+      "spawn_interval": 250,
+      "row_growth_interval": 7500
+    }
+  },
+  "danger_levels": {
+    "1": {
+      "stack_top_y": 596,
+      "danger_level": 0.11552346570397112
+    },
+    "2": {
+      "stack_top_y": 526,
+      "danger_level": 0.24187725631768953
+    },
+    "3": {
+      "stack_top_y": 456,
+      "danger_level": 0.36823104693140796
+    },
+    "4": {
+      "stack_top_y": 386,
+      "danger_level": 0.49458483754512633
+    },
+    "5": {
+      "stack_top_y": 316,
+      "danger_level": 0.6209386281588448
+    },
+    "6": {
+      "stack_top_y": 246,
+      "danger_level": 0.7472924187725631
+    },
+    "7": {
+      "stack_top_y": 176,
+      "danger_level": 0.8736462093862816
+    },
+    "8": {
+      "stack_top_y": 106,
+      "danger_level": 1.0
+    },
+    "9": {
+      "stack_top_y": 36,
+      "danger_level": 1.0
+    },
+    "10": {
+      "stack_top_y": -34,
+      "danger_level": 1.0
+    },
+    "11": {
+      "stack_top_y": -104,
+      "danger_level": 1.0
+    }
+  }
+}

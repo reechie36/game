@@ -16,7 +16,10 @@ from .config import (
     FALL_SPEED,
     GRACE_PERIOD_MS,
     MAX_FALLING,
+    MIN_ROW_GROWTH_INTERVAL_MS,
+    MIN_SPAWN_INTERVAL_MS,
     ROW_GROWTH_INTERVAL_MS,
+    ROW_GROWTH_INTERVAL_STEP_MS,
     ROW_HOLD_MS,
     ROW_LEN,
     ROW_FLICKER_MS,
@@ -24,6 +27,7 @@ from .config import (
     SCREEN_H,
     SCREEN_W,
     SPAWN_INTERVAL_MS,
+    SPAWN_INTERVAL_STEP_MS,
     SPAWN_Y,
 )
 from .data import (

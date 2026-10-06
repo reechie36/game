@@ -80,19 +80,42 @@ SCORE_POPUP_MS = 900
 SCORE_POPUP_INTRO_MS = 500
 BINGO_BONUS_MULTIPLIER = 2
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT_DIR = os.path.dirname(PROJECT_DIR)
+load_dotenv(os.path.join(ROOT_DIR, ".env"), override=True)
 load_dotenv(os.path.join(PROJECT_DIR, ".env"), override=True)
-FONT_PATH = os.path.join(PROJECT_DIR, "FiraMono-Regular.ttf")
-SOUNDS_DIR = os.path.join(PROJECT_DIR, "source_data", "sounds")
+
+def _find_path(*candidates):
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return candidates[0]
+
+FONT_PATH = _find_path(
+    os.path.join(ROOT_DIR, "assets", "fonts", "FiraMono-Regular.ttf"),
+    os.path.join(ROOT_DIR, "FiraMono-Regular.ttf"),
+    os.path.join(PROJECT_DIR, "FiraMono-Regular.ttf"),
+)
+SOUNDS_DIR = _find_path(
+    os.path.join(ROOT_DIR, "assets", "sounds"),
+    os.path.join(ROOT_DIR, "source_data", "sounds"),
+    os.path.join(PROJECT_DIR, "source_data", "sounds"),
+)
+DATA_DIR = _find_path(
+    os.path.join(ROOT_DIR, "assets", "data"),
+    ROOT_DIR,
+    PROJECT_DIR,
+)
+
 SOUND_PATHS = {
-    "pickup": os.path.join(SOUNDS_DIR, "UI", "sci_fi_select.wav"),
-    "place": os.path.join(SOUNDS_DIR, "Card and Board", "chips_place_1.wav"),
-    "confirm": os.path.join(SOUNDS_DIR, "UI", "sci_fi_confirm.wav"),
-    "success": os.path.join(SOUNDS_DIR, "UI", "synth_process_complete.wav"),
-    "bingo": os.path.join(SOUNDS_DIR, "Items", "coin_jingle_small.wav"),
-    "error": os.path.join(SOUNDS_DIR, "UI", "sci_fi_error.wav"),
-    "grow": os.path.join(SOUNDS_DIR, "Retro", "power_up.wav"),
-    "warning": os.path.join(SOUNDS_DIR, "UI", "synth_warning.wav"),
-    "game_over": os.path.join(SOUNDS_DIR, "Retro", "lose.wav"),
+    "pickup": os.path.join(SOUNDS_DIR, "dice_grab.wav"),
+    "place": os.path.join(SOUNDS_DIR, "chips_place_1.wav"),
+    "confirm": os.path.join(SOUNDS_DIR, "item_equip.wav"),
+    "success": os.path.join(SOUNDS_DIR, "grand_piano_chime_positive.wav"),
+    "bingo": os.path.join(SOUNDS_DIR, "coin_jingle_small.wav"),
+    "error": os.path.join(SOUNDS_DIR, "grand_piano_negative_quick.wav"),
+    "grow": os.path.join(SOUNDS_DIR, "lock_quick.wav"),
+    "warning": os.path.join(SOUNDS_DIR, "grand_piano_negative_long.wav"),
+    "game_over": os.path.join(SOUNDS_DIR, "grand_piano_defeated.wav"),
 }
 PROFILE_PATH = os.path.join(PROJECT_DIR, "player_profile.json")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")

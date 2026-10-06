@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 .env
 player_profile.json
+node_modules/
+env.js
+
