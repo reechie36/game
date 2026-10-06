@@ -99,7 +99,7 @@ export class LeaderboardClient {
     this.error = null;
     try {
       const roundedScore = Math.round(score * 100) / 100;
-      const { error: insertError } = await this.client.table("leaderboard").insert({
+      const { error: insertError } = await this.client.from("leaderboard").insert({
         player_name: profile.player_name || "Unknown",
         score: roundedScore,
         rarest_word_found: rarestWord || "-",
