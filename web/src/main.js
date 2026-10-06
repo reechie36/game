@@ -18,7 +18,6 @@ class GameApp {
     const profile = this.profileManager.profile;
 
     this.audio = new AudioEngine(profile.sound_volume, profile.sound_muted);
-    this.audio.preloadAll().catch(() => {});
 
     this.leaderboard = new LeaderboardClient(this.profileManager);
     this.renderer = new Renderer(this.canvas);
@@ -60,6 +59,9 @@ class GameApp {
     // Audio unlock on first user gesture
     const unlockAudio = () => {
       this.audio.ensureContext();
+      this.audio.preloadAll().catch((err) => {
+        console.warn("Could not preload audio:", err);
+      });
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };

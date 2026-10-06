@@ -13,6 +13,7 @@ export class AudioEngine {
     this.masterGain = null;
     this.buffers = new Map();
     this.unlocked = false;
+    this.preloadPromise = null;
   }
 
   ensureContext() {
@@ -28,7 +29,9 @@ export class AudioEngine {
       this.applyVolume();
     }
     if (this.ctx.state === "suspended") {
-      this.ctx.resume().catch(() => {});
+      this.ctx.resume().catch((err) => {
+        console.warn("Could not resume audio context:", err);
+      });
     }
     this.unlocked = true;
     return this.ctx;
@@ -72,18 +75,37 @@ export class AudioEngine {
   }
 
   async preloadAll() {
+    if (this.preloadPromise) {
+      return this.preloadPromise;
+    }
+
     const promises = [];
     for (const [name, path] of Object.entries(SOUND_PATHS)) {
       const fallback = SOUND_FALLBACK_PATHS[name];
       promises.push(this.loadSound(name, path, fallback));
     }
-    await Promise.allSettled(promises);
+    this.preloadPromise = Promise.allSettled(promises).then(() => {
+      this.preloadPromise = null;
+    });
+    return this.preloadPromise;
   }
 
-  play(name) {
+  async play(name) {
     if (this.muted || this.volume <= 0) return;
     const ctx = this.ensureContext();
     if (!ctx) return;
+
+    if (!this.buffers.has(name)) {
+      await this.preloadAll();
+    }
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch (err) {
+        console.warn("Could not resume audio context:", err);
+        return;
+      }
+    }
 
     const buffer = this.buffers.get(name);
     if (!buffer) return;
