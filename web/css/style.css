@@ -83,12 +83,21 @@ input {
   width: 100%;
   height: var(--line-height, 2px);
   pointer-events: none;
-  z-index: 2;
+  z-index: 0;
 }
 
 #stack-line-bg {
   top: var(--stack-line-top, 0px);
-  background: rgba(245, 75, 75, 0.706);
+  height: var(--stack-zone-height, 2px);
+  background: linear-gradient(
+    to bottom,
+    rgba(245, 75, 75, 0.706) 0 2px,
+    rgba(220, 45, 45, 0.412) 2px,
+    rgba(220, 45, 45, 0.231) 25%,
+    rgba(220, 45, 45, 0.103) 50%,
+    rgba(220, 45, 45, 0.026) 75%,
+    transparent 100%
+  );
 }
 
 #danger-line-bg {
@@ -143,7 +152,7 @@ input {
   margin: 0;
   padding: 7px 12px;
   text-align: center;
-  background: rgba(18, 18, 24, 0.88);
+  background: color-mix(in srgb, var(--bg-color) 88%, transparent);
   border-radius: 6px;
 }
 
@@ -181,7 +190,7 @@ input {
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(45, 45, 58, 0.7);
+  background: color-mix(in srgb, var(--btn-bg) 70%, transparent);
   border: 1px solid var(--grid-line);
   color: var(--text-color);
   font-size: 14px;
@@ -196,7 +205,7 @@ input {
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(18, 18, 24, 0.94);
+  background: color-mix(in srgb, var(--bg-color) 94%, transparent);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -211,7 +220,7 @@ input {
 }
 
 .overlay-panel {
-  background: rgba(28, 28, 36, 0.96);
+  background: color-mix(in srgb, var(--bg-color) 55%, var(--cell-empty));
   border: 2px solid var(--grid-line);
   border-radius: 12px;
   padding: 32px 28px;

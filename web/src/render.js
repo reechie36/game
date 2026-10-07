@@ -30,6 +30,23 @@ function rgbaStr([r, g, b], a) {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+function cssColorToRgb(value, fallback) {
+  const normalized = value.trim();
+  const rgbMatch = normalized.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (rgbMatch) return rgbMatch.slice(1).map(Number);
+
+  const hexMatch = normalized.match(/^#([\da-f]{6})$/i);
+  if (hexMatch) {
+    return [
+      parseInt(hexMatch[1].slice(0, 2), 16),
+      parseInt(hexMatch[1].slice(2, 4), 16),
+      parseInt(hexMatch[1].slice(4, 6), 16),
+    ];
+  }
+
+  return fallback;
+}
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -56,6 +73,39 @@ export class Renderer {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.ctx.imageSmoothingEnabled = true;
     this.ctx.textBaseline = "middle";
+  }
+
+  getThemeColors() {
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name, fallback) =>
+      cssColorToRgb(styles.getPropertyValue(name), fallback);
+
+    return {
+      ...COLORS,
+      BG: color("--bg-color", COLORS.BG),
+      GRID_LINE: color("--grid-line", COLORS.GRID_LINE),
+      CELL_EMPTY: color("--cell-empty", COLORS.CELL_EMPTY),
+      TEXT_COLOR: color("--text-color", COLORS.TEXT_COLOR),
+      DANGER_LINE_COLOR: color("--danger-color", COLORS.DANGER_LINE_COLOR),
+      FALLING_COLOR: color("--accent-gold", COLORS.FALLING_COLOR),
+      FALLING_DRAG_COLOR: color("--accent-gold-hover", COLORS.FALLING_DRAG_COLOR),
+      GRACE_COLOR: color("--danger-color", COLORS.GRACE_COLOR),
+    };
+  }
+
+  updateViewportEffects(disappearY) {
+    const wrapperRect = this.canvas.getBoundingClientRect();
+    const scale = wrapperRect.height / SCREEN_H;
+    const root = document.documentElement;
+    const toViewportY = (logicalY) => wrapperRect.top + logicalY * scale;
+
+    root.style.setProperty("--stack-line-top", `${toViewportY(disappearY)}px`);
+    root.style.setProperty("--danger-line-top", `${toViewportY(BUFFER_LINE_Y)}px`);
+    root.style.setProperty("--line-height", `${Math.max(1, 2 * scale)}px`);
+    root.style.setProperty(
+      "--stack-zone-height",
+      `${Math.max(2, DELETION_ZONE_HEIGHT * scale)}px`
+    );
   }
 
   /**
@@ -85,9 +135,10 @@ export class Renderer {
   renderGame(board, now, hoverCandidate = null, hoveredCell = null, draggedLetter = null) {
     this.beginFrame();
     const ctx = this.ctx;
+    const colors = this.getThemeColors();
 
     // 1. Base background
-    ctx.fillStyle = rgbStr(COLORS.BG);
+    ctx.fillStyle = rgbStr(colors.BG);
     ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
     const dangerLevel = board.danger_level();
@@ -98,16 +149,17 @@ export class Renderer {
     }
 
     const disappearY = board.stack_top_y() - 4;
+    this.updateViewportEffects(disappearY);
 
     // 2. Cover area below the gradient
     const underGradientY = disappearY + DELETION_ZONE_HEIGHT;
     if (underGradientY < SCREEN_H) {
-      ctx.fillStyle = rgbStr(COLORS.BG);
+      ctx.fillStyle = rgbStr(colors.BG);
       ctx.fillRect(0, underGradientY, SCREEN_W, SCREEN_H - underGradientY);
     }
 
     // 3. Danger / buffer line
-    ctx.strokeStyle = rgbStr(COLORS.DANGER_LINE_COLOR);
+    ctx.strokeStyle = rgbStr(colors.DANGER_LINE_COLOR);
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, BUFFER_LINE_Y);
@@ -133,7 +185,7 @@ export class Renderer {
     }
 
     // 5. Deletion zone background & Masking gradient
-    ctx.fillStyle = rgbStr(COLORS.BG);
+    ctx.fillStyle = rgbStr(colors.BG);
     ctx.fillRect(0, disappearY, SCREEN_W, DELETION_ZONE_HEIGHT);
 
     // Gradient with quadratic falloff
@@ -168,7 +220,7 @@ export class Renderer {
         // Determine cell background color
         let cellCol;
         if (row.isLocked(c)) {
-          cellCol = COLORS.ROW_INVALID_COLOR;
+          cellCol = colors.ROW_INVALID_COLOR;
         } else if (
           row.resolution_phase === "flicker" &&
           row.resolution_range !== null &&
@@ -176,20 +228,20 @@ export class Renderer {
           c <= row.resolution_range[1] &&
           Math.floor(now / 50) % 2 === 0
         ) {
-          cellCol = COLORS.ROW_FLICKER_COLOR;
+          cellCol = colors.ROW_FLICKER_COLOR;
         } else if (row.hole_cols.has(c)) {
-          cellCol = COLORS.CELL_HOLE;
+          cellCol = colors.CELL_HOLE;
         } else if (row.cells[c] !== null) {
-          cellCol = COLORS.CELL_UNLOCKED_FILLED;
+          cellCol = colors.CELL_UNLOCKED_FILLED;
         } else {
-          cellCol = COLORS.CELL_EMPTY;
+          cellCol = colors.CELL_EMPTY;
         }
 
         this.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 6);
         ctx.fillStyle = rgbStr(cellCol);
         ctx.fill();
 
-        ctx.strokeStyle = rgbStr(COLORS.GRID_LINE);
+        ctx.strokeStyle = rgbStr(colors.GRID_LINE);
         ctx.lineWidth = 2;
         ctx.stroke();
 
@@ -198,7 +250,7 @@ export class Renderer {
           const [, start, end] = hoverCandidate;
           if (c >= start && c <= end) {
             this.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 6);
-            ctx.strokeStyle = rgbStr(COLORS.ROW_FLICKER_COLOR);
+            ctx.strokeStyle = rgbStr(colors.ROW_FLICKER_COLOR);
             ctx.lineWidth = 3;
             ctx.stroke();
           }
@@ -207,7 +259,7 @@ export class Renderer {
         // Highlight directly hovered cell
         if (hoveredCell !== null && hoveredCell[0] === rIdx && hoveredCell[1] === c) {
           this.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 6);
-          ctx.strokeStyle = rgbStr(COLORS.TEXT_COLOR);
+          ctx.strokeStyle = rgbStr(colors.TEXT_COLOR);
           ctx.lineWidth = 3;
           ctx.stroke();
         }
@@ -287,7 +339,7 @@ export class Renderer {
 
       ctx.save();
       ctx.textAlign = "center";
-      ctx.fillStyle = rgbaStr(COLORS.SCORE_POPUP_COLOR, popupAlpha);
+      ctx.fillStyle = rgbaStr(colors.SCORE_POPUP_COLOR, popupAlpha);
       ctx.font = `bold 30px ${this.fontFamily}`;
       ctx.fillText(popupText, Math.round(popup.x), Math.round(popupY));
 
@@ -297,7 +349,7 @@ export class Renderer {
       ctx.fillText(tierName(popup.tier), SCREEN_W / 2, BOARD_BOTTOM_Y + 75);
 
       if (popup.bingo) {
-        ctx.fillStyle = rgbaStr(COLORS.SCORE_POPUP_COLOR, popupAlpha);
+        ctx.fillStyle = rgbaStr(colors.SCORE_POPUP_COLOR, popupAlpha);
         ctx.font = `bold 46px ${this.fontFamily}`;
         ctx.fillText("BINGO!", SCREEN_W / 2, BOARD_BOTTOM_Y + 125);
       }
@@ -306,7 +358,7 @@ export class Renderer {
 
     // 11. HUD: Score and Time
     ctx.textAlign = "left";
-    ctx.fillStyle = rgbStr(COLORS.TEXT_COLOR);
+    ctx.fillStyle = rgbStr(colors.TEXT_COLOR);
     ctx.font = `bold 30px ${this.fontFamily}`;
     ctx.fillText(`Score: ${board.score.toFixed(2)}`, 16, 32);
 
@@ -329,7 +381,7 @@ export class Renderer {
       ctx.fillText("GAME OVER", SCREEN_W / 2, SCREEN_H / 2 - 30);
 
       ctx.font = `bold 30px ${this.fontFamily}`;
-      ctx.fillStyle = rgbStr(COLORS.TEXT_COLOR);
+      ctx.fillStyle = rgbStr(colors.TEXT_COLOR);
       ctx.fillText(`Final score: ${board.score.toFixed(2)}`, SCREEN_W / 2, SCREEN_H / 2 + 20);
 
       ctx.font = `18px ${this.fontFamily}`;
