@@ -62,6 +62,13 @@ export class Renderer {
     this.canvas.height = Math.round(SCREEN_H * this.dpr);
   }
 
+  clear() {
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.restore();
+  }
+
   /**
    * Reset context transform with DPR scaling.
    */

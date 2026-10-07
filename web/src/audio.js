@@ -4,27 +4,28 @@
  */
 
 import {
-  BACKGROUND_MUSIC_PATH,
+  BACKGROUND_MUSIC_FALLBACK_PATH,
+  MUSIC_MANIFEST_PATH,
   SOUND_FALLBACK_PATHS,
   SOUND_PATHS,
 } from "./config.js";
 
 export class AudioEngine {
-  constructor(volume = 0.75, muted = false) {
+  constructor(volume = 0.75, muted = false, musicVolume = 0.75) {
     this.volume = volume;
+    this.musicVolume = musicVolume;
     this.muted = muted;
     this.ctx = null;
     this.masterGain = null;
     this.buffers = new Map();
     this.unlocked = false;
     this.preloadPromise = null;
-    this.musicAvailable = true;
-    this.music = new Audio(BACKGROUND_MUSIC_PATH);
-    this.music.loop = true;
+    this.musicTracks = null;
+    this.currentMusicIndex = -1;
+    this.music = new Audio(BACKGROUND_MUSIC_FALLBACK_PATH);
+    this.music.loop = false;
     this.music.preload = "auto";
-    this.music.addEventListener("error", () => {
-      this.musicAvailable = false;
-    });
+    this.music.addEventListener("ended", () => this.playNextMusic());
   }
 
   ensureContext() {
@@ -56,8 +57,12 @@ export class AudioEngine {
 
   setVolume(vol) {
     this.volume = Math.max(0, Math.min(1, vol));
-    this.music.volume = this.getMusicVolume();
     this.applyVolume();
+  }
+
+  setMusicVolume(vol) {
+    this.musicVolume = Math.max(0, Math.min(1, vol));
+    this.music.volume = this.getMusicVolume();
   }
 
   setMuted(isMuted) {
@@ -67,20 +72,62 @@ export class AudioEngine {
   }
 
   getMusicVolume() {
-    return Math.min(1, this.volume * 0.35);
+    return Math.min(1, this.musicVolume * 0.35);
   }
 
   async playMusic() {
-    if (!this.musicAvailable || this.muted || this.volume <= 0) return;
+    if (this.muted || this.volume <= 0) return;
 
+    if (this.currentMusicIndex < 0) {
+      this.currentMusicIndex = 0;
+    }
     this.music.volume = this.getMusicVolume();
     this.music.muted = false;
-    try {
-      await this.music.play();
-    } catch (err) {
-      this.musicAvailable = false;
+    const playback = this.music.play();
+    playback.catch((err) => {
       console.warn("Could not play background music:", err);
+    });
+
+    try {
+      await this.loadMusicTracks();
+    } catch (err) {
+      console.warn("Could not load background music tracks:", err);
     }
+  }
+
+  async loadMusicTracks() {
+    if (this.musicTracks) return this.musicTracks;
+
+    try {
+      const response = await fetch(MUSIC_MANIFEST_PATH);
+      if (!response.ok) throw new Error(`Manifest request failed: ${response.status}`);
+      const manifest = await response.json();
+      this.musicTracks = Array.isArray(manifest.tracks) && manifest.tracks.length
+        ? manifest.tracks.map((track) => new URL(track, MUSIC_MANIFEST_PATH).href)
+        : [BACKGROUND_MUSIC_FALLBACK_PATH];
+    } catch (err) {
+      console.warn("Could not load music manifest; using fallback track:", err);
+      this.musicTracks = [BACKGROUND_MUSIC_FALLBACK_PATH];
+    }
+
+    return this.musicTracks;
+  }
+
+  async playNextMusic() {
+    const tracks = await this.loadMusicTracks();
+    if (tracks.length > 1) {
+      let nextIndex = this.currentMusicIndex;
+      while (nextIndex === this.currentMusicIndex) {
+        nextIndex = Math.floor(Math.random() * tracks.length);
+      }
+      this.currentMusicIndex = nextIndex;
+    } else {
+      this.currentMusicIndex = 0;
+    }
+
+    this.music.src = tracks[this.currentMusicIndex];
+    this.music.loop = false;
+    await this.playMusic();
   }
 
   pauseMusic() {

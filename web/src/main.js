@@ -7,17 +7,23 @@ import { Board } from "./board.js";
 import { loadWords } from "./data.js";
 import { InputHandler } from "./input.js";
 import { LeaderboardClient } from "./leaderboard.js";
+import { MenuBackground } from "./menu_background.js";
 import { ProfileManager } from "./profile.js";
-import { Renderer } from "./render.js";
-import { UIManager } from "./ui.js";
+import { Renderer } from "./render.js?v=2";
+import { UIManager } from "./ui.js?v=2";
 
 class GameApp {
   constructor() {
     this.canvas = document.getElementById("game-canvas");
+    this.menuBackground = new MenuBackground(document.getElementById("menu-letter-rain"));
     this.profileManager = new ProfileManager();
     const profile = this.profileManager.profile;
 
-    this.audio = new AudioEngine(profile.sound_volume, profile.sound_muted);
+    this.audio = new AudioEngine(
+      profile.sound_volume,
+      profile.sound_muted,
+      profile.music_volume
+    );
 
     this.leaderboard = new LeaderboardClient(this.profileManager);
     this.renderer = new Renderer(this.canvas);
@@ -44,6 +50,7 @@ class GameApp {
       onPublicToggle: () => this.handlePublicToggle(),
       onThemeChange: (theme) => this.handleThemeChange(theme),
       onVolumeChange: (vol) => this.handleVolumeChange(vol),
+      onMusicVolumeChange: (vol) => this.handleMusicVolumeChange(vol),
       onMuteToggle: () => this.handleMuteToggle(),
       onResume: () => this.resumeGame(),
       onRestart: () => this.restartGame(),
@@ -106,6 +113,14 @@ class GameApp {
   switchState(newState) {
     const oldState = this.state;
     this.state = newState;
+
+    if (newState === "menu" && oldState !== "menu") {
+      this.board = new Board(performance.now());
+      this.inputHandler.setBoard(this.board);
+      this.submitted = false;
+      this.isNewBest = false;
+      this.renderer.clear();
+    }
 
     if (newState === "playing") {
       this.audio.playMusic();
@@ -216,6 +231,12 @@ class GameApp {
     this.profileManager.setAudioSettings(vol, false);
     this.audio.setVolume(vol);
     this.audio.setMuted(false);
+    this.ui.updateSettingsUI(this.profileManager.profile);
+  }
+
+  handleMusicVolumeChange(vol) {
+    this.profileManager.setMusicVolume(vol);
+    this.audio.setMusicVolume(vol);
     this.ui.updateSettingsUI(this.profileManager.profile);
   }
 

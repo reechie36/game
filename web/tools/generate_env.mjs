@@ -5,6 +5,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { generateMusicManifest } from "./generate_music_manifest.mjs";
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey =
@@ -26,6 +27,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = path.resolve(__dirname, "..");
 const outputPath = path.join(WEB_DIR, "env.js");
 fs.writeFileSync(outputPath, envContent, "utf-8");
+await generateMusicManifest();
 
 // Also keep a copy at repo root if running at root level
 try {

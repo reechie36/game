@@ -16,6 +16,7 @@ export class UIManager {
     this.onPublicToggle = options.onPublicToggle || (() => {});
     this.onThemeChange = options.onThemeChange || (() => {});
     this.onVolumeChange = options.onVolumeChange || (() => {});
+    this.onMusicVolumeChange = options.onMusicVolumeChange || (() => {});
     this.onMuteToggle = options.onMuteToggle || (() => {});
     this.onResume = options.onResume || (() => {});
     this.onRestart = options.onRestart || (() => {});
@@ -28,6 +29,7 @@ export class UIManager {
   }
 
   cacheElements() {
+    this.appContainer = document.getElementById("app-container");
     this.menuOverlay = document.getElementById("menu-overlay");
     this.nameOverlay = document.getElementById("name-overlay");
     this.settingsOverlay = document.getElementById("settings-overlay");
@@ -60,6 +62,8 @@ export class UIManager {
     this.themeSelect = document.getElementById("theme-select");
     this.volumeSlider = document.getElementById("volume-slider");
     this.volumeLabel = document.getElementById("volume-label");
+    this.musicVolumeSlider = document.getElementById("music-volume-slider");
+    this.musicVolumeLabel = document.getElementById("music-volume-label");
     this.btnSettingsMute = document.getElementById("btn-settings-mute");
     this.btnSettingsBack = document.getElementById("btn-settings-back");
 
@@ -109,6 +113,9 @@ export class UIManager {
     this.volumeSlider.addEventListener("input", (e) => {
       this.onVolumeChange(parseFloat(e.target.value));
     });
+    this.musicVolumeSlider.addEventListener("input", (e) => {
+      this.onMusicVolumeChange(parseFloat(e.target.value));
+    });
     this.btnSettingsMute.addEventListener("click", () => this.onMuteToggle());
     this.btnSettingsBack.addEventListener("click", () => this.onMenu());
 
@@ -127,6 +134,7 @@ export class UIManager {
   }
 
   showState(state) {
+    this.appContainer?.classList.toggle("menu-state", state === "menu");
     const overlays = [
       this.menuOverlay,
       this.nameOverlay,
@@ -179,6 +187,10 @@ export class UIManager {
     this.volumeLabel.textContent = profile.sound_muted
       ? "SOUND: MUTED"
       : `SOUND: ${Math.round(profile.sound_volume * 100)}%`;
+    this.musicVolumeSlider.value = profile.music_volume;
+    this.musicVolumeLabel.textContent = profile.sound_muted
+      ? "MUSIC: MUTED"
+      : `MUSIC: ${Math.round(profile.music_volume * 100)}%`;
     this.btnSettingsMute.textContent = profile.sound_muted ? "UNMUTE SOUND" : "MUTE SOUND";
     this.themeSelect.value = profile.theme;
   }

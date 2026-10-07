@@ -7,11 +7,14 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { generateMusicManifest } from "./generate_music_manifest.mjs";
 
 const PORT = parseInt(process.env.PORT || "8080", 10);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = path.resolve(__dirname, "../..");
 const WEB_DIR = path.join(REPO_DIR, "web");
+
+await generateMusicManifest();
 
 // Ensure env.js exists in web directory
 if (!fs.existsSync(path.join(WEB_DIR, "env.js"))) {
@@ -39,6 +42,7 @@ const MIME_TYPES = {
 const server = http.createServer((req, res) => {
   let reqPath = decodeURI(req.url.split("?")[0]);
   if (reqPath === "/") reqPath = "/index.html";
+  if (reqPath.endsWith("/")) reqPath += "index.html";
 
   const filePath = path.join(REPO_DIR, reqPath);
 

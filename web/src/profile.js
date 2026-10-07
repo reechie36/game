@@ -54,6 +54,7 @@ export class ProfileManager {
       public: typeof data.public === "boolean" ? data.public : true,
       personal_best: typeof data.personal_best === "number" ? data.personal_best : 0,
       sound_volume: typeof data.sound_volume === "number" ? data.sound_volume : 0.75,
+      music_volume: typeof data.music_volume === "number" ? data.music_volume : 0.75,
       sound_muted: typeof data.sound_muted === "boolean" ? data.sound_muted : false,
       theme: THEMES.has(data.theme) ? data.theme : "default",
     };
@@ -88,6 +89,11 @@ export class ProfileManager {
   setAudioSettings(volume, muted) {
     this.profile.sound_volume = Math.max(0, Math.min(1, volume));
     this.profile.sound_muted = Boolean(muted);
+    this.save();
+  }
+
+  setMusicVolume(volume) {
+    this.profile.music_volume = Math.max(0, Math.min(1, volume));
     this.save();
   }
 
