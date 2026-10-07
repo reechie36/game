@@ -150,6 +150,21 @@ async function runTests() {
   assert.equal(row0.multiplier_cols.has(4), false, "Scored multiplier tokens should be consumed");
   console.log(`  ✓ Adjacent unlocking and scoring verified (score: ${simBoard.score.toFixed(2)})`);
 
+  // Multiple multiplier tokens of either value may occupy the same row.
+  const stackedBoard = new Board(0);
+  const stackedRow = stackedBoard.rows[0];
+  stackedRow.cells[0] = "c";
+  stackedRow.cells[1] = "a";
+  stackedRow.cells[2] = "t";
+  stackedRow.multiplier_cols.set(0, 2);
+  stackedRow.multiplier_cols.set(1, 2);
+  stackedRow.multiplier_cols.set(2, 3);
+  stackedBoard.try_clear_segment(0, 0, 2, 0);
+  stackedBoard.update(0.1, 350);
+  stackedBoard.update(0.1, 550);
+  assert.equal(stackedBoard.score, 60, "All multiplier tokens in a word should stack multiplicatively");
+  console.log("  ✓ Repeated and mixed multiplier tokens stack in one row");
+
   // 6. Test weighted random letter sampling
   console.log("\nChecking random letter sampling...");
   const counts = {};

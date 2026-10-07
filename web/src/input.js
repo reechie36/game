@@ -236,7 +236,7 @@ export class InputHandler {
         !row.scored_cols.has(c)
       ) {
         if (fl instanceof MultiplierToken) {
-          if (row.multiplier_cols.has(c) || [...row.multiplier_cols.values()].includes(fl.value)) {
+          if (row.multiplier_cols.has(c)) {
             fl.x = pos[0];
             fl.y = pos[1];
             fl.dragging = false;

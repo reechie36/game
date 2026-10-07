@@ -366,7 +366,7 @@ class Game:
                 and c not in row.scored_cols
             ):
                 if isinstance(fl, MultiplierToken):
-                    if c in row.multiplier_cols or fl.value in row.multiplier_cols.values():
+                    if c in row.multiplier_cols:
                         fl.x, fl.y = pos
                         fl.dragging = False
                         return
