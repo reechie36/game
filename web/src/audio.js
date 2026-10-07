@@ -3,7 +3,11 @@
  * Preloads AudioBuffers, manages master GainNode, and unlocks on first interaction.
  */
 
-import { SOUND_FALLBACK_PATHS, SOUND_PATHS } from "./config.js";
+import {
+  BACKGROUND_MUSIC_PATH,
+  SOUND_FALLBACK_PATHS,
+  SOUND_PATHS,
+} from "./config.js";
 
 export class AudioEngine {
   constructor(volume = 0.75, muted = false) {
@@ -14,6 +18,13 @@ export class AudioEngine {
     this.buffers = new Map();
     this.unlocked = false;
     this.preloadPromise = null;
+    this.musicAvailable = true;
+    this.music = new Audio(BACKGROUND_MUSIC_PATH);
+    this.music.loop = true;
+    this.music.preload = "auto";
+    this.music.addEventListener("error", () => {
+      this.musicAvailable = false;
+    });
   }
 
   ensureContext() {
@@ -45,12 +56,35 @@ export class AudioEngine {
 
   setVolume(vol) {
     this.volume = Math.max(0, Math.min(1, vol));
+    this.music.volume = this.getMusicVolume();
     this.applyVolume();
   }
 
   setMuted(isMuted) {
     this.muted = Boolean(isMuted);
+    this.music.muted = this.muted;
     this.applyVolume();
+  }
+
+  getMusicVolume() {
+    return Math.min(1, this.volume * 0.35);
+  }
+
+  async playMusic() {
+    if (!this.musicAvailable || this.muted || this.volume <= 0) return;
+
+    this.music.volume = this.getMusicVolume();
+    this.music.muted = false;
+    try {
+      await this.music.play();
+    } catch (err) {
+      this.musicAvailable = false;
+      console.warn("Could not play background music:", err);
+    }
+  }
+
+  pauseMusic() {
+    this.music.pause();
   }
 
   async loadSound(name, path, fallbackPath) {

@@ -108,6 +108,12 @@ class GameApp {
     this.state = newState;
 
     if (newState === "playing") {
+      this.audio.playMusic();
+    } else if (oldState === "playing" || newState === "paused" || newState === "game_over") {
+      this.audio.pauseMusic();
+    }
+
+    if (newState === "playing") {
       const now = performance.now();
       if (oldState === "paused") {
         this.board.resume(now);

@@ -110,6 +110,7 @@ export const TIER_NAMES = {
 };
 
 const SOUND_BASE_URL = new URL("../assets/sounds/", import.meta.url);
+export const BACKGROUND_MUSIC_PATH = new URL("background.mp4", SOUND_BASE_URL).href;
 
 export const SOUND_PATHS = {
   pickup: new URL("dice_grab.wav", SOUND_BASE_URL).href,
