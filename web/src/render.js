@@ -367,7 +367,7 @@ export class Renderer {
     ctx.textAlign = "left";
     ctx.fillStyle = rgbStr(colors.TEXT_COLOR);
     ctx.font = `bold 30px ${this.fontFamily}`;
-    ctx.fillText(`Score: ${board.score.toFixed(2)}`, 16, 32);
+    ctx.fillText(`Score: ${board.score.toFixed(2)}`, 16, 44);
 
     const elapsedSeconds = board.elapsed_seconds(now);
     const minutes = Math.floor(elapsedSeconds / 60);
@@ -376,7 +376,7 @@ export class Renderer {
 
     ctx.textAlign = "right";
     ctx.font = `18px ${this.fontFamily}`;
-    ctx.fillText(timeStr, SCREEN_W - 16, 32);
+    ctx.fillText(timeStr, SCREEN_W - 16, 44);
 
     // 12. If Game Over: draw game over text on canvas
     if (board.game_over) {

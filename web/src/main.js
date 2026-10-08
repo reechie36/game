@@ -36,6 +36,7 @@ class GameApp {
 
     this.state = "menu"; // "menu" | "name_entry" | "settings" | "leaderboard" | "playing" | "paused" | "game_over"
     this.nameReturnState = "menu";
+    this.settingsReturnState = "menu";
     this.lastTime = performance.now();
     this.isNewBest = false;
     this.submitted = false;
@@ -52,6 +53,7 @@ class GameApp {
       onVolumeChange: (vol) => this.handleVolumeChange(vol),
       onMusicVolumeChange: (vol) => this.handleMusicVolumeChange(vol),
       onMuteToggle: () => this.handleMuteToggle(),
+      onSettingsBack: () => this.handleSettingsBack(),
       onResume: () => this.resumeGame(),
       onRestart: () => this.restartGame(),
       onMenu: () => this.switchState("menu"),
@@ -101,8 +103,10 @@ class GameApp {
           this.switchState("menu");
         }
       } else if (e.key === "Escape") {
-        if (this.state === "leaderboard" || this.state === "settings") {
+        if (this.state === "leaderboard") {
           this.switchState("menu");
+        } else if (this.state === "settings") {
+          this.handleSettingsBack();
         } else if (this.state === "name_entry") {
           this.handleNameCancel();
         }
@@ -123,7 +127,11 @@ class GameApp {
     }
 
     if (newState === "playing") {
-      this.audio.playMusic();
+      if (oldState === "paused") {
+        this.audio.playMusic();
+      } else {
+        this.audio.playNextMusic();
+      }
     } else if (oldState === "playing" || newState === "paused" || newState === "game_over") {
       this.audio.pauseMusic();
     }
@@ -207,8 +215,14 @@ class GameApp {
   }
 
   handleOpenSettings() {
+    this.settingsReturnState = this.state;
+    this.ui.setSettingsInGame(this.state === "paused");
     this.ui.updateSettingsUI(this.profileManager.profile);
     this.switchState("settings");
+  }
+
+  handleSettingsBack() {
+    this.switchState(this.settingsReturnState);
   }
 
   handlePublicToggle() {

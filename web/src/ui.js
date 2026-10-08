@@ -18,6 +18,7 @@ export class UIManager {
     this.onVolumeChange = options.onVolumeChange || (() => {});
     this.onMusicVolumeChange = options.onMusicVolumeChange || (() => {});
     this.onMuteToggle = options.onMuteToggle || (() => {});
+    this.onSettingsBack = options.onSettingsBack || (() => {});
     this.onResume = options.onResume || (() => {});
     this.onRestart = options.onRestart || (() => {});
     this.onMenu = options.onMenu || (() => {});
@@ -76,6 +77,7 @@ export class UIManager {
     // Pause
     this.btnPauseResume = document.getElementById("btn-pause-resume");
     this.btnPauseRestart = document.getElementById("btn-pause-restart");
+    this.btnPauseSettings = document.getElementById("btn-pause-settings");
     this.btnPauseMenu = document.getElementById("btn-pause-menu");
 
     // Game Over
@@ -117,12 +119,13 @@ export class UIManager {
       this.onMusicVolumeChange(parseFloat(e.target.value));
     });
     this.btnSettingsMute.addEventListener("click", () => this.onMuteToggle());
-    this.btnSettingsBack.addEventListener("click", () => this.onMenu());
+    this.btnSettingsBack.addEventListener("click", () => this.onSettingsBack());
 
     this.btnLeaderboardBack.addEventListener("click", () => this.onMenu());
 
     this.btnPauseResume.addEventListener("click", () => this.onResume());
     this.btnPauseRestart.addEventListener("click", () => this.onRestart());
+    this.btnPauseSettings.addEventListener("click", () => this.onSettings());
     this.btnPauseMenu.addEventListener("click", () => this.onMenu());
 
     this.btnGameoverRestart.addEventListener("click", () => this.onRestart());
@@ -175,6 +178,10 @@ export class UIManager {
     }
   }
 
+  setSettingsInGame(isInGame) {
+    this.settingsOverlay?.classList.toggle("in-game", isInGame);
+  }
+
   promptName(returnTo, currentName = "") {
     this.playerNameInput.value = currentName;
     this.showState("name_entry");
@@ -206,13 +213,15 @@ export class UIManager {
     if (!candidate || !candidate.word) {
       this.confirmBtn.textContent = "SPACE TO CONFIRM";
       this.confirmBtn.setAttribute("aria-label", "Select a word to confirm");
-      this.confirmHint.textContent = "Tap a word twice to confirm";
+      this.confirmHint.textContent = "Tap a word twice or click SPACE to confirm";
+      this.confirmBtn.classList.add("hidden");
       this.confirmBtn.classList.remove("active");
     } else {
       const upper = candidate.word.toUpperCase();
       this.confirmBtn.textContent = `CONFIRM "${upper}"`;
       this.confirmBtn.setAttribute("aria-label", `Confirm word ${upper}`);
       this.confirmHint.textContent = `Tap "${upper}" twice, or tap confirm`;
+      this.confirmBtn.classList.remove("hidden");
       this.confirmBtn.classList.add("active");
     }
   }
