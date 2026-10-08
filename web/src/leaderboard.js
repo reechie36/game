@@ -15,6 +15,7 @@ export class LeaderboardClient {
     this.rank = null;
     this.error = null;
     this.loading = false;
+    this.mode = "endless";
     this.client = null;
     this.supabaseModule = null;
     this.initPromise = this.initClient();
@@ -46,7 +47,7 @@ export class LeaderboardClient {
     }
   }
 
-  async fetchLeaderboard() {
+  async fetchLeaderboard(mode = this.mode) {
     await this.initPromise;
     if (!this.client) {
       throw new Error("Leaderboard is not configured");
@@ -55,6 +56,7 @@ export class LeaderboardClient {
     const { data, error } = await this.client.rpc("get_leaderboard", {
       requested_client_id: profile.client_id,
       result_limit: LEADERBOARD_LIMIT,
+      requested_mode: mode,
     });
 
     if (error) throw error;
@@ -62,8 +64,9 @@ export class LeaderboardClient {
     return Array.isArray(data) ? data : data.rows || [];
   }
 
-  async refresh() {
+  async refresh(mode = this.mode) {
     if (this.loading) return;
+    this.mode = mode;
     this.loading = true;
     this.error = null;
     try {
@@ -71,7 +74,7 @@ export class LeaderboardClient {
         this.error = "Offline mode (Supabase not configured)";
         return;
       }
-      this.rows = await this.fetchLeaderboard();
+      this.rows = await this.fetchLeaderboard(mode);
       const me = this.rows.find((r) => r.is_me);
       this.rank = me ? me.rank : null;
       this.error = null;
@@ -83,7 +86,8 @@ export class LeaderboardClient {
     }
   }
 
-  async submitAndRefresh(score, rarestWord) {
+  async submitAndRefresh(score, rarestWord, mode = this.mode) {
+    this.mode = mode;
     await this.initPromise;
     const profile = this.profileManager.profile;
     if (!profile.public) {
@@ -104,6 +108,7 @@ export class LeaderboardClient {
         score: roundedScore,
         rarest_word_found: rarestWord || "-",
         client_id: profile.client_id,
+        mode,
       });
 
       if (insertError) {
@@ -112,7 +117,7 @@ export class LeaderboardClient {
         });
       }
 
-      this.rows = await this.fetchLeaderboard();
+      this.rows = await this.fetchLeaderboard(mode);
       const me = this.rows.find((r) => r.is_me);
       this.rank = me ? me.rank : null;
       this.error = null;

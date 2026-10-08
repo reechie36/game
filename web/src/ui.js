@@ -11,6 +11,7 @@ export class UIManager {
     this.onModeSelect = options.onModeSelect || (() => {});
     this.onMenuNameSubmit = options.onMenuNameSubmit || (() => false);
     this.onLeaderboard = options.onLeaderboard || (() => {});
+    this.onLeaderboardModeSelect = options.onLeaderboardModeSelect || (() => {});
     this.onSettings = options.onSettings || (() => {});
     this.onNameSubmit = options.onNameSubmit || (() => {});
     this.onNameCancel = options.onNameCancel || (() => {});
@@ -76,6 +77,8 @@ export class UIManager {
     this.leaderboardTable = document.getElementById("leaderboard-table");
     this.leaderboardBody = document.getElementById("leaderboard-body");
     this.btnLeaderboardBack = document.getElementById("btn-leaderboard-back");
+    this.btnLeaderboardEndless = document.getElementById("btn-leaderboard-endless");
+    this.btnLeaderboardTime = document.getElementById("btn-leaderboard-time");
 
     // Pause
     this.btnPauseResume = document.getElementById("btn-pause-resume");
@@ -137,6 +140,8 @@ export class UIManager {
     this.btnSettingsBack.addEventListener("click", () => this.onSettingsBack());
 
     this.btnLeaderboardBack.addEventListener("click", () => this.onMenu());
+    this.btnLeaderboardEndless.addEventListener("click", () => this.onLeaderboardModeSelect("endless"));
+    this.btnLeaderboardTime.addEventListener("click", () => this.onLeaderboardModeSelect("time_attack"));
 
     this.btnPauseResume.addEventListener("click", () => this.onResume());
     this.btnPauseRestart.addEventListener("click", () => this.onRestart());
@@ -336,6 +341,12 @@ export class UIManager {
       `;
       this.leaderboardBody.appendChild(tr);
     });
+  }
+
+  setLeaderboardMode(mode) {
+    const isTimeAttack = mode === "time_attack";
+    this.btnLeaderboardEndless.classList.toggle("primary", !isTimeAttack);
+    this.btnLeaderboardTime.classList.toggle("primary", isTimeAttack);
   }
 }
 

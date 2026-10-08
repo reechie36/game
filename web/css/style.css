@@ -582,3 +582,18 @@ input {
 .start-countdown.hidden {
   display: none;
 }
+
+.leaderboard-tabs {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 450px;
+  margin-bottom: 16px;
+}
+
+.leaderboard-tabs .menu-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 14px;
+}

@@ -157,7 +157,8 @@ create table public.leaderboard (
   player_name text not null,
   score numeric(10,2) not null,
   rarest_word_found text default '-'::text,
-  client_id text not null
+   client_id text not null,
+   mode text not null default 'endless' check (mode in ('endless', 'time_attack'))
 );
 
 -- 2. Enable Row Level Security (RLS)
@@ -171,7 +172,8 @@ create policy "Allow anonymous insert"
 -- 3. Create Leaderboard RPC Function
 create or replace function public.get_leaderboard(
   requested_client_id text,
-  result_limit integer default 100
+   result_limit integer default 100,
+   requested_mode text default 'endless'
 )
 returns json
 language sql
@@ -185,7 +187,8 @@ as $$
       rarest_word_found,
       client_id,
       (client_id = requested_client_id) as is_me
-    from public.leaderboard
+   from public.leaderboard
+   where coalesce(mode, 'endless') = requested_mode
   )
   select coalesce(json_agg(r), '[]'::json)
   from (
@@ -194,6 +197,34 @@ as $$
   ) r;
 $$;
 ```
+
+For an existing leaderboard, run this migration before deploying the updated
+client. Existing rows are assigned to Endless, preserving the old board:
+
+```sql
+alter table public.leaderboard
+   add column if not exists mode text default 'endless';
+
+update public.leaderboard
+set mode = 'endless'
+where mode is null;
+
+alter table public.leaderboard
+   alter column mode set default 'endless',
+   alter column mode set not null;
+
+alter table public.leaderboard
+   drop constraint if exists leaderboard_mode_check;
+
+alter table public.leaderboard
+   add constraint leaderboard_mode_check
+   check (mode in ('endless', 'time_attack'));
+
+drop function if exists public.get_leaderboard(text, integer);
+```
+
+After the migration, rerun the `create or replace function` statement above so
+the RPC includes its new `requested_mode` parameter and filters by mode.
 
 ---
 

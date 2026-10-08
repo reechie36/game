@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Shuffall</title>
-  <link rel="stylesheet" href="css/style.css?v=13">
+  <link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
   <div id="app-container">
@@ -130,6 +130,10 @@
       <div id="leaderboard-overlay" class="overlay hidden">
         <div class="overlay-panel" style="max-width: 680px;">
           <h2 class="title-large" style="font-size: 28px; margin-bottom: 16px;">GLOBAL LEADERBOARD</h2>
+          <div class="leaderboard-tabs" role="tablist" aria-label="Leaderboard mode">
+            <button id="btn-leaderboard-endless" class="menu-btn primary" role="tab">ENDLESS</button>
+            <button id="btn-leaderboard-time" class="menu-btn" role="tab">TIME ATTACK</button>
+          </div>
           <div class="leaderboard-table-container">
             <div id="leaderboard-status" class="loading-text">Loading...</div>
             <table id="leaderboard-table" class="leaderboard-table" style="display: none;">
@@ -183,6 +187,6 @@
   </div>
 
   <script src="env.js"></script>
-  <script type="module" src="src/main.js?v=10"></script>
+  <script type="module" src="src/main.js?v=12"></script>
 </body>
 </html>

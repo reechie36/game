@@ -6,12 +6,12 @@ import { AudioEngine } from "./audio.js";
 import { Board } from "./board.js";
 import { loadWords } from "./data.js";
 import { InputHandler } from "./input.js";
-import { LeaderboardClient } from "./leaderboard.js";
+import { LeaderboardClient } from "./leaderboard.js?v=2";
 import { MenuBackground } from "./menu_background.js";
 import { ProfileManager } from "./profile.js";
 import { GAME_MODES } from "./config.js?v=2";
 import { Renderer } from "./render.js?v=4";
-import { UIManager } from "./ui.js?v=5";
+import { UIManager } from "./ui.js?v=6";
 
 class GameApp {
   constructor() {
@@ -38,6 +38,7 @@ class GameApp {
     this.state = "menu"; // "menu" | "mode_picker" | "name_entry" | "settings" | "leaderboard" | "countdown" | "playing" | "paused" | "game_over"
     this.nameReturnState = "menu";
     this.settingsReturnState = "menu";
+    this.leaderboardMode = "endless";
     this.selectedMode = "endless";
     this.countdownEnd = 0;
     this.lastTime = performance.now();
@@ -49,6 +50,7 @@ class GameApp {
       onModeSelect: (mode) => this.handleModeSelect(mode),
       onMenuNameSubmit: (name) => this.handleMenuNameSubmit(name),
       onLeaderboard: () => this.handleOpenLeaderboard(),
+      onLeaderboardModeSelect: (mode) => this.handleOpenLeaderboard(mode),
       onSettings: () => this.handleOpenSettings(),
       onNameSubmit: (name) => this.handleNameSubmit(name),
       onNameCancel: () => this.handleNameCancel(),
@@ -207,8 +209,10 @@ class GameApp {
     }
   }
 
-  handleOpenLeaderboard() {
+  handleOpenLeaderboard(mode = this.leaderboardMode) {
+    this.leaderboardMode = mode;
     this.switchState("leaderboard");
+    this.ui.setLeaderboardMode(mode);
     this.ui.renderLeaderboard(
       this.leaderboard.rows,
       this.leaderboard.rank,
@@ -216,7 +220,7 @@ class GameApp {
       null,
       this.profileManager.profile.client_id
     );
-    this.leaderboard.refresh().then(() => {
+    this.leaderboard.refresh(mode).then(() => {
       this.ui.renderLeaderboard(
         this.leaderboard.rows,
         this.leaderboard.rank,
@@ -349,7 +353,7 @@ class GameApp {
       this.board.elapsed_seconds(performance.now())
     );
     this.leaderboard
-      .submitAndRefresh(this.board.score, this.board.rarest_word_found)
+      .submitAndRefresh(this.board.score, this.board.rarest_word_found, this.board.mode)
       .then(() => {
         this.ui.showGameOver(
           this.board.score,

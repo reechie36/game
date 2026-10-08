@@ -231,11 +231,13 @@ create table public.leaderboard (
 	score numeric not null,
 	rarest_word_found text not null,
 	client_id uuid not null,
+	mode text not null default 'endless' check (mode in ('endless', 'time_attack')),
 	created_at timestamptz not null default now()
 );
 ```
 
-The client expects an RPC named `get_leaderboard` that returns the top 100 rows
+The client expects an RPC named `get_leaderboard` that accepts
+`requested_mode` (`endless` or `time_attack`) and returns the top 100 rows
 plus the requesting player's row when they are outside the top 100. Each row
 should contain `rank`, `player_name`, `score`, `rarest_word_found`, and
 `is_me`. The RPC can use `requested_client_id` and `result_limit` arguments.
