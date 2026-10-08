@@ -353,7 +353,12 @@ class GameApp {
       this.board.elapsed_seconds(performance.now())
     );
     this.leaderboard
-      .submitAndRefresh(this.board.score, this.board.rarest_word_found, this.board.mode)
+      .submitAndRefresh(
+        this.board.score,
+        this.board.rarest_word_found,
+        this.board.mode,
+        this.board.active_elapsed_ms(performance.now())
+      )
       .then(() => {
         this.ui.showGameOver(
           this.board.score,

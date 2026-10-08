@@ -53,15 +53,20 @@ export class LeaderboardClient {
       throw new Error("Leaderboard is not configured");
     }
     const profile = this.profileManager.profile;
-    const { data, error } = await this.client.rpc("get_leaderboard", {
-      requested_client_id: profile.client_id,
-      result_limit: LEADERBOARD_LIMIT,
-      requested_mode: mode,
-    });
+    const table = tableForMode(mode);
+    const { data, error } = await this.client
+      .from(table)
+      .select("player_name, score, rarest_word_found, client_id, created_at")
+      .order("score", { ascending: false })
+      .order("created_at", { ascending: true })
+      .limit(LEADERBOARD_LIMIT);
 
     if (error) throw error;
-    if (!data) return [];
-    return Array.isArray(data) ? data : data.rows || [];
+    return (data || []).map((row, index) => ({
+      ...row,
+      rank: index + 1,
+      is_me: row.client_id === profile.client_id,
+    }));
   }
 
   async refresh(mode = this.mode) {
@@ -86,7 +91,7 @@ export class LeaderboardClient {
     }
   }
 
-  async submitAndRefresh(score, rarestWord, mode = this.mode) {
+  async submitAndRefresh(score, rarestWord, mode = this.mode, durationMs = 120000) {
     this.mode = mode;
     await this.initPromise;
     const profile = this.profileManager.profile;
@@ -103,13 +108,19 @@ export class LeaderboardClient {
     this.error = null;
     try {
       const roundedScore = Math.round(score * 100) / 100;
-      const { error: insertError } = await this.client.from("leaderboard").insert({
+      const table = tableForMode(mode);
+      const payload = {
         player_name: profile.player_name || "Unknown",
         score: roundedScore,
         rarest_word_found: rarestWord || "-",
         client_id: profile.client_id,
-        mode,
-      });
+      };
+      if (mode === "time_attack") {
+        payload.trial_seconds = TIME_TRIAL_SECONDS;
+        payload.duration_ms = Math.round(durationMs);
+      }
+
+      const { error: insertError } = await this.client.from(table).insert(payload);
 
       if (insertError) {
         throw new Error(`Score submission failed: ${insertError.message}`, {
@@ -129,4 +140,11 @@ export class LeaderboardClient {
       this.loading = false;
     }
   }
+
+}
+
+const TIME_TRIAL_SECONDS = 120;
+
+function tableForMode(mode) {
+  return mode === "time_attack" ? "timetrial_leaderboard" : "endless_leaderboard";
 }

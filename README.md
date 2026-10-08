@@ -220,30 +220,13 @@ cp .env.example .env
 `.env` is ignored by Git. Never put a Supabase service-role key in this file
 or in the client; use only the project URL and anonymous key.
 
-Run [supabase_leaderboard.sql](supabase_leaderboard.sql) in the Supabase SQL
-editor. It creates the `leaderboard` table, anonymous RLS policies, and the
-`get_leaderboard` rank function used by the game. The essential table shape is:
+For the web client, create separate `endless_leaderboard` and
+`timetrial_leaderboard` tables in Supabase using the schemas described in
+[DEPLOYMENT.md](DEPLOYMENT.md). Enable anonymous select and insert policies on
+both tables. The web client queries these tables directly and computes ranks
+from the returned rows.
 
-```sql
-create table public.leaderboard (
-	id uuid primary key default gen_random_uuid(),
-	player_name text not null check (char_length(player_name) between 1 and 16),
-	score numeric not null,
-	rarest_word_found text not null,
-	client_id uuid not null,
-	mode text not null default 'endless' check (mode in ('endless', 'time_attack')),
-	created_at timestamptz not null default now()
-);
-```
-
-The client expects an RPC named `get_leaderboard` that accepts
-`requested_mode` (`endless` or `time_attack`) and returns the top 100 rows
-plus the requesting player's row when they are outside the top 100. Each row
-should contain `rank`, `player_name`, `score`, `rarest_word_found`, and
-`is_me`. The RPC can use `requested_client_id` and `result_limit` arguments.
-Enable Row Level Security and permit anonymous `select` and `insert` only for
-this table; validate public display names in the database as well as in the
-client. If the variables are missing or the request fails, the game continues
+If the variables are missing or a request fails, the web game continues
 offline and shows a quiet leaderboard error.
 
 ## Function pseudocode
