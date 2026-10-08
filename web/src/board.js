@@ -23,6 +23,7 @@ import {
   ROW_FLICKER_MS,
   ROW_GROWTH_INTERVAL_MS,
   ROW_GROWTH_INTERVAL_STEP_MS,
+  GAME_MODES,
   ROW_HOLD_MS,
   ROW_LEN,
   SCORE_POPUP_MS,
@@ -32,7 +33,7 @@ import {
   SPAWN_INTERVAL_STEP_MS,
   SPAWN_Y,
   TIER_MULTIPLIERS,
-} from "./config.js";
+} from "./config.js?v=2";
 import {
   LETTER_POINTS,
   randomLetter,
@@ -116,7 +117,9 @@ export class ScorePopup {
  * Main game board managing stack rows, falling letters, timers, and score.
  */
 export class Board {
-  constructor(now = 0) {
+  constructor(now = 0, mode = "endless") {
+    this.mode = GAME_MODES[mode] ? mode : "endless";
+    this.mode_config = GAME_MODES[this.mode];
     this.rows = [new Row()]; // start with one open row at the bottom
     this.falling = [];
     this.sound_events = [];
@@ -131,6 +134,7 @@ export class Board {
     this.grace_active = false;
     this.grace_end = 0;
     this.game_over = false;
+    this.end_reason = null;
     this.score_popups = [];
     this.rarest_word_found = "";
   }
@@ -172,7 +176,7 @@ export class Board {
   // -- growth / spawning ---------------------------------------------
 
   difficulty_steps(now) {
-    return Math.floor(this.active_elapsed_ms(now) / 60000);
+    return Math.floor(this.active_elapsed_ms(now) / this.mode_config.difficulty_interval_ms);
   }
 
   active_elapsed_ms(now) {
@@ -205,14 +209,14 @@ export class Board {
   spawn_interval(now) {
     return Math.max(
       MIN_SPAWN_INTERVAL_MS,
-      SPAWN_INTERVAL_MS - this.difficulty_steps(now) * SPAWN_INTERVAL_STEP_MS
+      this.mode_config.spawn_interval_ms - this.difficulty_steps(now) * SPAWN_INTERVAL_STEP_MS
     );
   }
 
   row_growth_interval(now) {
     return Math.max(
       MIN_ROW_GROWTH_INTERVAL_MS,
-      ROW_GROWTH_INTERVAL_MS - this.difficulty_steps(now) * ROW_GROWTH_INTERVAL_STEP_MS
+      this.mode_config.row_growth_interval_ms - this.difficulty_steps(now) * ROW_GROWTH_INTERVAL_STEP_MS
     );
   }
 
@@ -293,9 +297,12 @@ export class Board {
   update(dt, now) {
     if (this.game_over) return;
 
-    this.maybe_grow(now);
-    this.maybe_spawn(now);
-    this.maybe_spawn_multiplier(now);
+    const timeExpired = this.is_time_expired(now);
+    if (!timeExpired) {
+      this.maybe_grow(now);
+      this.maybe_spawn(now);
+      this.maybe_spawn_multiplier(now);
+    }
     this.update_row_resolutions(now);
     this.score_popups = this.score_popups.filter(
       (popup) => now - popup.created_at < SCORE_POPUP_MS
@@ -322,6 +329,13 @@ export class Board {
     this.separate_falling_letters();
 
     this.update_grace_period(now, top_y);
+
+    if (timeExpired && !this.has_active_resolution()) {
+      this.game_over = true;
+      this.ended_at = now;
+      this.end_reason = "time_up";
+      this.sound_events.push("game_over");
+    }
   }
 
   update_grace_period(now, top_y = null) {
@@ -342,12 +356,27 @@ export class Board {
     if (this.grace_active && now >= this.grace_end) {
       this.game_over = true;
       this.ended_at = now;
+      this.end_reason = "top_out";
       this.sound_events.push("game_over");
     }
   }
 
   elapsed_seconds(now) {
     return Math.floor(this.active_elapsed_ms(now) / 1000);
+  }
+
+  time_remaining_seconds(now) {
+    if (this.mode_config.time_limit_ms === null) return null;
+    return Math.max(0, Math.ceil((this.mode_config.time_limit_ms - this.active_elapsed_ms(now)) / 1000));
+  }
+
+  is_time_expired(now) {
+    return this.mode_config.time_limit_ms !== null
+      && this.active_elapsed_ms(now) >= this.mode_config.time_limit_ms;
+  }
+
+  has_active_resolution() {
+    return this.rows.some((row) => row.resolution_phase !== null);
   }
 
   grace_remaining_ms(now) {

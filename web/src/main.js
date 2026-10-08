@@ -9,8 +9,9 @@ import { InputHandler } from "./input.js";
 import { LeaderboardClient } from "./leaderboard.js";
 import { MenuBackground } from "./menu_background.js";
 import { ProfileManager } from "./profile.js";
-import { Renderer } from "./render.js?v=2";
-import { UIManager } from "./ui.js?v=2";
+import { GAME_MODES } from "./config.js?v=2";
+import { Renderer } from "./render.js?v=4";
+import { UIManager } from "./ui.js?v=5";
 
 class GameApp {
   constructor() {
@@ -34,15 +35,18 @@ class GameApp {
       onSegmentChange: (candidate) => this.ui.setSegmentCandidate(candidate),
     });
 
-    this.state = "menu"; // "menu" | "name_entry" | "settings" | "leaderboard" | "playing" | "paused" | "game_over"
+    this.state = "menu"; // "menu" | "mode_picker" | "name_entry" | "settings" | "leaderboard" | "countdown" | "playing" | "paused" | "game_over"
     this.nameReturnState = "menu";
     this.settingsReturnState = "menu";
+    this.selectedMode = "endless";
+    this.countdownEnd = 0;
     this.lastTime = performance.now();
     this.isNewBest = false;
     this.submitted = false;
 
     this.ui = new UIManager({
       onPlay: () => this.handlePlayClick(),
+      onModeSelect: (mode) => this.handleModeSelect(mode),
       onMenuNameSubmit: (name) => this.handleMenuNameSubmit(name),
       onLeaderboard: () => this.handleOpenLeaderboard(),
       onSettings: () => this.handleOpenSettings(),
@@ -65,6 +69,7 @@ class GameApp {
     this.ui.updateSettingsUI(this.profileManager.profile);
     this.applyTheme(this.profileManager.profile.theme);
     this.ui.updateMenuUI(this.profileManager.profile);
+    this.ui.updateModePickerUI(this.profileManager.profile);
     this.ui.showState("menu");
   }
 
@@ -153,12 +158,20 @@ class GameApp {
   }
 
   handlePlayClick() {
+    this.ui.updateModePickerUI(this.profileManager.profile);
+    this.state = "mode_picker";
+    this.ui.showState("mode_picker");
+  }
+
+  handleModeSelect(mode) {
+    if (!GAME_MODES[mode]) return;
+    this.selectedMode = mode;
     if (!this.profileManager.profile.player_name) {
       this.nameReturnState = "play";
       this.ui.promptName("play", "");
       this.state = "name_entry";
     } else {
-      this.startNewGame();
+      this.startNewGame(this.selectedMode);
     }
   }
 
@@ -177,7 +190,7 @@ class GameApp {
     this.ui.updateSettingsUI(this.profileManager.profile);
 
     if (this.nameReturnState === "play") {
-      this.startNewGame();
+      this.startNewGame(this.selectedMode);
     } else if (this.nameReturnState === "game_over") {
       this.submitScore();
       this.switchState("game_over");
@@ -261,13 +274,22 @@ class GameApp {
     this.ui.updateSettingsUI(this.profileManager.profile);
   }
 
-  startNewGame() {
+  startNewGame(mode = this.selectedMode) {
     const now = performance.now();
-    this.board = new Board(now);
+    this.selectedMode = GAME_MODES[mode] ? mode : "endless";
+    this.board = new Board(now, this.selectedMode);
     this.inputHandler.setBoard(this.board);
     this.submitted = false;
     this.isNewBest = false;
-    this.switchState("playing");
+    if (this.selectedMode === "time_attack") {
+      this.board.pause(now);
+      this.countdownEnd = now + 3000;
+      this.state = "countdown";
+      this.ui.showState("countdown");
+      this.ui.setCountdown(3);
+    } else {
+      this.switchState("playing");
+    }
   }
 
   pauseGame() {
@@ -302,7 +324,7 @@ class GameApp {
 
   handleGameOver() {
     this.state = "game_over";
-    this.isNewBest = this.profileManager.updatePersonalBest(this.board.score);
+    this.isNewBest = this.profileManager.updatePersonalBest(this.board.score, this.board.mode);
 
     if (this.profileManager.profile.player_name) {
       this.submitScore();
@@ -317,7 +339,15 @@ class GameApp {
     if (this.submitted) return;
     this.submitted = true;
 
-    this.ui.showGameOver(this.board.score, this.isNewBest, null, "Submitting score...");
+    this.ui.showGameOver(
+      this.board.score,
+      this.isNewBest,
+      null,
+      "Submitting score...",
+      this.board.mode,
+      this.board.end_reason,
+      this.board.elapsed_seconds(performance.now())
+    );
     this.leaderboard
       .submitAndRefresh(this.board.score, this.board.rarest_word_found)
       .then(() => {
@@ -325,7 +355,10 @@ class GameApp {
           this.board.score,
           this.isNewBest,
           this.leaderboard.rank,
-          this.leaderboard.error
+          this.leaderboard.error,
+          this.board.mode,
+          this.board.end_reason,
+          this.board.elapsed_seconds(performance.now())
         );
       });
   }
@@ -338,7 +371,14 @@ class GameApp {
       this.lastTime = now;
 
       const wasGameOver = this.board.game_over;
-      if (this.state === "playing") {
+      if (this.state === "countdown") {
+        const countdownSeconds = Math.ceil((this.countdownEnd - now) / 1000);
+        this.ui.setCountdown(countdownSeconds);
+        if (now >= this.countdownEnd) {
+          this.board.resume(now);
+          this.switchState("playing");
+        }
+      } else if (this.state === "playing") {
         this.board.update(dt, now);
       }
 

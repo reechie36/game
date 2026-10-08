@@ -3,11 +3,12 @@
  */
 
 import { calculateWordScore, WORD_TIERS } from "./data.js";
-import { BINGO_BONUS_MULTIPLIER, ROW_LEN } from "./config.js";
+import { BINGO_BONUS_MULTIPLIER, GAME_MODES, ROW_LEN } from "./config.js?v=2";
 
 export class UIManager {
   constructor(options = {}) {
     this.onPlay = options.onPlay || (() => {});
+    this.onModeSelect = options.onModeSelect || (() => {});
     this.onMenuNameSubmit = options.onMenuNameSubmit || (() => false);
     this.onLeaderboard = options.onLeaderboard || (() => {});
     this.onSettings = options.onSettings || (() => {});
@@ -32,6 +33,7 @@ export class UIManager {
   cacheElements() {
     this.appContainer = document.getElementById("app-container");
     this.menuOverlay = document.getElementById("menu-overlay");
+    this.modeOverlay = document.getElementById("mode-overlay");
     this.nameOverlay = document.getElementById("name-overlay");
     this.settingsOverlay = document.getElementById("settings-overlay");
     this.leaderboardOverlay = document.getElementById("leaderboard-overlay");
@@ -42,6 +44,7 @@ export class UIManager {
     this.confirmHint = document.getElementById("confirm-hint");
     this.confirmBtn = document.getElementById("confirm-btn");
     this.pauseBtnHud = document.getElementById("pause-btn-hud");
+    this.startCountdown = document.getElementById("start-countdown");
 
     // Menu
     this.btnMenuPlay = document.getElementById("btn-menu-play");
@@ -84,15 +87,27 @@ export class UIManager {
     this.gameoverScore = document.getElementById("gameover-score");
     this.gameoverBest = document.getElementById("gameover-best");
     this.gameoverRank = document.getElementById("gameover-rank");
+    this.gameoverTitle = document.getElementById("gameover-title");
+    this.gameoverTime = document.getElementById("gameover-time");
     this.btnGameoverRestart = document.getElementById("btn-gameover-restart");
     this.btnGameoverLeaderboard = document.getElementById("btn-gameover-leaderboard");
     this.btnGameoverMenu = document.getElementById("btn-gameover-menu");
+
+    // Mode picker
+    this.btnModeEndless = document.getElementById("btn-mode-endless");
+    this.btnModeTimeAttack = document.getElementById("btn-mode-time-attack");
+    this.btnModeBack = document.getElementById("btn-mode-back");
+    this.modeEndlessBest = document.getElementById("mode-endless-best");
+    this.modeTimeBest = document.getElementById("mode-time-best");
   }
 
   bindEvents() {
     this.btnMenuPlay.addEventListener("click", () => this.onPlay());
     this.btnMenuLeaderboard.addEventListener("click", () => this.onLeaderboard());
     this.btnMenuSettings.addEventListener("click", () => this.onSettings());
+    this.btnModeEndless.addEventListener("click", () => this.onModeSelect("endless"));
+    this.btnModeTimeAttack.addEventListener("click", () => this.onModeSelect("time_attack"));
+    this.btnModeBack.addEventListener("click", () => this.onMenu());
     this.menuNameForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const saved = this.onMenuNameSubmit(this.menuPlayerNameInput.value);
@@ -140,6 +155,7 @@ export class UIManager {
     this.appContainer?.classList.toggle("menu-state", state === "menu");
     const overlays = [
       this.menuOverlay,
+      this.modeOverlay,
       this.nameOverlay,
       this.settingsOverlay,
       this.leaderboardOverlay,
@@ -151,10 +167,14 @@ export class UIManager {
     const isPlaying = state === "playing";
     this.actionBar.style.display = isPlaying ? "flex" : "none";
     this.pauseBtnHud.style.display = isPlaying ? "block" : "none";
+    this.startCountdown.classList.toggle("hidden", state !== "countdown");
 
     switch (state) {
       case "menu":
         this.menuOverlay?.classList.remove("hidden");
+        break;
+      case "mode_picker":
+        this.modeOverlay?.classList.remove("hidden");
         break;
       case "name_entry":
         this.nameOverlay?.classList.remove("hidden");
@@ -209,6 +229,12 @@ export class UIManager {
       : "Enter a name for leaderboard scores.";
   }
 
+  updateModePickerUI(profile) {
+    const personalBests = profile.personal_bests || {};
+    this.modeEndlessBest.textContent = `BEST: ${(personalBests.endless ?? profile.personal_best ?? 0).toFixed(2)}`;
+    this.modeTimeBest.textContent = `BEST: ${(personalBests.time_attack ?? 0).toFixed(2)}`;
+  }
+
   setSegmentCandidate(candidate) {
     if (!candidate || !candidate.word) {
       this.confirmBtn.textContent = "SPACE TO CONFIRM";
@@ -226,8 +252,16 @@ export class UIManager {
     }
   }
 
-  showGameOver(score, isNewBest, rank, error) {
+  setCountdown(seconds) {
+    this.startCountdown.textContent = seconds > 0 ? String(seconds) : "GO";
+  }
+
+  showGameOver(score, isNewBest, rank, error, mode = "endless", endReason = "top_out", timeSurvived = 0) {
+    const isTimeUp = mode === "time_attack" && endReason === "time_up";
+    this.gameoverTitle.textContent = isTimeUp ? "TIME'S UP" : "GAME OVER";
     this.gameoverScore.textContent = `Final Score: ${score.toFixed(2)}`;
+    this.gameoverTime.textContent = `Time survived: ${formatDuration(timeSurvived)}`;
+    this.gameoverTime.style.display = mode === "endless" ? "block" : "none";
     this.gameoverBest.style.display = isNewBest ? "block" : "none";
 
     if (rank !== null && rank !== undefined) {
@@ -303,6 +337,12 @@ export class UIManager {
       this.leaderboardBody.appendChild(tr);
     });
   }
+}
+
+function formatDuration(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
 }
 
 function escapeHtml(str) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Shuffall</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=13">
 </head>
 <body>
   <div id="app-container">
@@ -12,6 +12,7 @@
     <div id="danger-line-bg" aria-hidden="true"></div>
     <div id="game-wrapper">
       <canvas id="game-canvas" aria-label="Letter Rise game board"></canvas>
+      <div id="start-countdown" class="start-countdown hidden" aria-live="assertive"></div>
 
       <!-- In-game Action HUD -->
       <button id="pause-btn-hud" class="pause-btn-hud" style="display: none;">PAUSE (P)</button>
@@ -46,6 +47,24 @@
             <button id="btn-menu-leaderboard" class="menu-btn">LEADERBOARD</button>
             <button id="btn-menu-settings" class="menu-btn">SETTINGS</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Mode Picker -->
+      <div id="mode-overlay" class="overlay hidden">
+        <div class="overlay-panel mode-panel">
+          <h2 class="title-large">CHOOSE MODE</h2>
+          <div class="mode-option">
+            <button id="btn-mode-endless" class="menu-btn primary">ENDLESS</button>
+            <p>Survive as long as you can while scoring.</p>
+            <span id="mode-endless-best" class="mode-best">BEST: 0.00</span>
+          </div>
+          <div class="mode-option">
+            <button id="btn-mode-time-attack" class="menu-btn">TIME ATTACK</button>
+            <p>Score as much as possible before 2:00 expires.</p>
+            <span id="mode-time-best" class="mode-best">BEST: 0.00</span>
+          </div>
+          <button id="btn-mode-back" class="menu-btn">BACK</button>
         </div>
       </div>
 
@@ -147,8 +166,9 @@
       <!-- Game Over Overlay -->
       <div id="gameover-overlay" class="overlay hidden">
         <div class="overlay-panel">
-          <h2 class="title-large" style="color: var(--danger-color);">GAME OVER</h2>
+          <h2 id="gameover-title" class="title-large" style="color: var(--danger-color);">GAME OVER</h2>
           <p id="gameover-score" class="subtitle" style="font-size: 24px; margin-bottom: 8px;">Final Score: 0.00</p>
+          <p id="gameover-time" class="subtitle" style="font-size: 16px; color: var(--accent-gold);">Time survived: 00:00</p>
           <p id="gameover-best" class="subtitle" style="font-size: 16px; color: var(--accent-gold); display: none;">NEW PERSONAL BEST!</p>
           <p id="gameover-rank" class="hint-text" style="font-size: 16px; color: var(--accent-gold); margin-bottom: 20px;"></p>
           <div class="btn-group">
@@ -163,6 +183,6 @@
   </div>
 
   <script src="env.js"></script>
-  <script type="module" src="src/main.js?v=7"></script>
+  <script type="module" src="src/main.js?v=10"></script>
 </body>
 </html>

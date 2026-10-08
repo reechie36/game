@@ -370,13 +370,22 @@ export class Renderer {
     ctx.fillText(`Score: ${board.score.toFixed(2)}`, 16, 44);
 
     const elapsedSeconds = board.elapsed_seconds(now);
-    const minutes = Math.floor(elapsedSeconds / 60);
-    const seconds = elapsedSeconds % 60;
-    const timeStr = `Time: ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    const displaySeconds = board.mode === "time_attack"
+      ? board.time_remaining_seconds(now)
+      : elapsedSeconds;
+    const minutes = Math.floor(displaySeconds / 60);
+    const seconds = displaySeconds % 60;
+    const timeLabel = board.mode === "time_attack" ? "Time left" : "Time";
+    const timeStr = `${timeLabel}: ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
     ctx.textAlign = "right";
+    const urgent = board.mode === "time_attack" && displaySeconds <= 10;
+    const pulse = urgent ? 0.7 + Math.sin(now / 120) * 0.3 : 1;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = urgent ? "rgb(255, 190, 70)" : rgbStr(colors.TEXT_COLOR);
     ctx.font = `18px ${this.fontFamily}`;
     ctx.fillText(timeStr, SCREEN_W - 16, 44);
+    ctx.globalAlpha = 1;
 
     // 12. If Game Over: draw game over text on canvas
     if (board.game_over) {

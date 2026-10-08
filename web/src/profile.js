@@ -53,6 +53,14 @@ export class ProfileManager {
       player_name: typeof data.player_name === "string" ? data.player_name : "",
       public: typeof data.public === "boolean" ? data.public : true,
       personal_best: typeof data.personal_best === "number" ? data.personal_best : 0,
+      personal_bests: {
+        endless: typeof data.personal_bests?.endless === "number"
+          ? data.personal_bests.endless
+          : (typeof data.personal_best === "number" ? data.personal_best : 0),
+        time_attack: typeof data.personal_bests?.time_attack === "number"
+          ? data.personal_bests.time_attack
+          : 0,
+      },
       sound_volume: typeof data.sound_volume === "number" ? data.sound_volume : 0.75,
       music_volume: typeof data.music_volume === "number" ? data.music_volume : 0.75,
       sound_muted: typeof data.sound_muted === "boolean" ? data.sound_muted : false,
@@ -76,10 +84,12 @@ export class ProfileManager {
     return true;
   }
 
-  updatePersonalBest(score) {
+  updatePersonalBest(score, mode = "endless") {
     const rounded = Math.round(score * 100) / 100;
-    if (rounded > this.profile.personal_best) {
-      this.profile.personal_best = rounded;
+    const currentBest = this.profile.personal_bests[mode] || 0;
+    if (rounded > currentBest) {
+      this.profile.personal_bests[mode] = rounded;
+      if (mode === "endless") this.profile.personal_best = rounded;
       this.save();
       return true;
     }

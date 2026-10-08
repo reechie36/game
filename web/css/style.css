@@ -288,6 +288,34 @@ input {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
 
+.mode-panel {
+  gap: 18px;
+}
+
+.mode-option {
+  width: 100%;
+  max-width: 450px;
+  text-align: center;
+}
+
+.mode-option .menu-btn {
+  width: 100%;
+}
+
+.mode-option p {
+  margin-top: 8px;
+  color: var(--text-color);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mode-best {
+  display: block;
+  margin-top: 6px;
+  color: var(--accent-gold);
+  font-size: 13px;
+}
+
 .title-large {
   font-size: 38px;
   font-weight: bold;
@@ -535,4 +563,22 @@ input {
     font-size: 30px;
     margin-bottom: 22px;
   }
+}
+
+.start-countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-gold);
+  font-size: 96px;
+  font-weight: bold;
+  text-shadow: 0 0 24px rgba(230, 190, 90, 0.5);
+  pointer-events: none;
+  z-index: 30;
+}
+
+.start-countdown.hidden {
+  display: none;
 }

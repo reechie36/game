@@ -93,6 +93,17 @@ async function runTests() {
     );
   }
 
+  console.log("\nChecking game modes...");
+  const timeBoard = new Board(0, "time_attack");
+  assert.equal(timeBoard.difficulty_steps(0), 0);
+  assert.equal(timeBoard.spawn_interval(0), 750);
+  assert.equal(timeBoard.row_growth_interval(0), 9000);
+  assert.equal(timeBoard.difficulty_steps(25000), 1);
+  assert.equal(timeBoard.time_remaining_seconds(0), 120);
+  assert.equal(timeBoard.time_remaining_seconds(119500), 1);
+  assert.equal(timeBoard.time_remaining_seconds(120000), 0);
+  console.log("  ✓ Time Attack starts at 2:00 with faster spawn/growth tuning");
+
   // 4. Test danger levels & stack heights
   console.log("\nChecking danger levels and stack geometry...");
   const testBoard = new Board(0);

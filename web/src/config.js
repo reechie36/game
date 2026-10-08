@@ -33,6 +33,24 @@ export const ROW_GROWTH_INTERVAL_MS = 17500;
 export const MIN_ROW_GROWTH_INTERVAL_MS = 4000;
 export const ROW_GROWTH_INTERVAL_STEP_MS = 500;
 export const GRACE_PERIOD_MS = 10000;
+export const GAME_MODES = {
+  endless: {
+    label: "ENDLESS",
+    description: "Survive as long as you can while scoring.",
+    time_limit_ms: null,
+    difficulty_interval_ms: 60000,
+    spawn_interval_ms: SPAWN_INTERVAL_MS,
+    row_growth_interval_ms: ROW_GROWTH_INTERVAL_MS,
+  },
+  time_attack: {
+    label: "TIME ATTACK",
+    description: "Score as much as possible before the 2:00 clock expires.",
+    time_limit_ms: 120000,
+    difficulty_interval_ms: 25000,
+    spawn_interval_ms: 750,
+    row_growth_interval_ms: 9000,
+  },
+};
 export const ROW_HOLD_MS = 300;
 export const ROW_FLICKER_MS = 200;
 export const SCORE_POPUP_MS = 900;
