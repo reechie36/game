@@ -6,7 +6,7 @@ import { AudioEngine } from "./audio.js";
 import { Board } from "./board.js";
 import { loadWords } from "./data.js";
 import { InputHandler } from "./input.js";
-import { LeaderboardClient } from "./leaderboard.js?v=2";
+import { LeaderboardClient } from "./leaderboard.js?v=3";
 import { MenuBackground } from "./menu_background.js";
 import { ProfileManager } from "./profile.js";
 import { GAME_MODES } from "./config.js?v=2";

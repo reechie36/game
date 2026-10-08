@@ -170,6 +170,10 @@ alter table public.endless_leaderboard enable row level security;
 create policy "Allow anonymous insert"
   on public.endless_leaderboard for insert
   with check (true);
+
+create policy "Allow anonymous read"
+  on public.endless_leaderboard for select
+  using (true);
 ```
 
 For an existing leaderboard, run this migration before deploying the updated
@@ -181,6 +185,9 @@ alter table public.leaderboard rename to endless_leaderboard;
 
 The current time-trial mode submits `trial_seconds = 120` and its measured
 `duration_ms` to `timetrial_leaderboard`.
+Add equivalent anonymous `select` and `insert` policies to
+`timetrial_leaderboard`; without its `select` policy, the time-trial board
+cannot be read by the public client.
 
 ---
 
