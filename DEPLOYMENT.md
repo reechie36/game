@@ -165,6 +165,7 @@ create table public.endless_leaderboard (
 
 -- Enable Row Level Security (RLS)
 alter table public.endless_leaderboard enable row level security;
+grant select, insert on table public.endless_leaderboard to anon;
 
 -- Allow anonymous inserts
 create policy "Allow anonymous insert"
@@ -188,6 +189,20 @@ The current time-trial mode submits `trial_seconds = 120` and its measured
 Add equivalent anonymous `select` and `insert` policies to
 `timetrial_leaderboard`; without its `select` policy, the time-trial board
 cannot be read by the public client.
+
+Run this SQL for an existing time-trial table:
+
+```sql
+grant select, insert on table public.timetrial_leaderboard to anon;
+
+create policy "Allow anonymous time-trial read"
+  on public.timetrial_leaderboard for select
+  using (true);
+
+create policy "Allow anonymous time-trial insert"
+  on public.timetrial_leaderboard for insert
+  with check (true);
+```
 
 ---
 

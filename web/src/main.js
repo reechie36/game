@@ -342,6 +342,23 @@ class GameApp {
   submitScore() {
     if (this.submitted) return;
     this.submitted = true;
+    const durationMs = this.board.active_elapsed_ms(performance.now());
+
+    if (
+      this.board.mode === "time_attack" &&
+      durationMs < 118000
+    ) {
+      this.ui.showGameOver(
+        this.board.score,
+        this.isNewBest,
+        null,
+        "Time trials must reach 02:00 to qualify for the leaderboard.",
+        this.board.mode,
+        this.board.end_reason,
+        this.board.elapsed_seconds(performance.now())
+      );
+      return;
+    }
 
     this.ui.showGameOver(
       this.board.score,
@@ -357,7 +374,7 @@ class GameApp {
         this.board.score,
         this.board.rarest_word_found,
         this.board.mode,
-        this.board.active_elapsed_ms(performance.now())
+        durationMs
       )
       .then(() => {
         this.ui.showGameOver(
