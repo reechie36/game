@@ -279,12 +279,14 @@ input {
   transition: opacity 0.2s ease;
 }
 
-/* The home page backdrop. It is nested in the menu overlay, which itself sits
-   in the square #game-wrapper, so it is pinned to the viewport instead of
-   `absolute` to make the letter rain span the whole width of the screen.
-   Stacking is untouched: the overlay still owns the stacking context, so the
-   rain keeps painting above the overlay backdrop and below .overlay-panel. */
-#menu-letter-rain {
+/* Shared backdrop for the menu-family screens (main menu, mode picker, settings
+   and leaderboard). Each overlay owns its own rain layer, nested as the first
+   child, so the letters paint above that overlay's backdrop and below its
+   .overlay-panel. The container is nested inside the square #game-wrapper, so
+   it is pinned to the viewport instead of `absolute` to make the letter rain
+   span the whole width of the screen. Stacking is untouched: the overlay still
+   owns the stacking context. */
+.menu-letter-rain {
   position: fixed;
   inset: 0;
   overflow: hidden;

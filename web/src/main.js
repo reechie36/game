@@ -16,7 +16,14 @@ import { UIManager } from "./ui.js?v=7";
 class GameApp {
   constructor() {
     this.canvas = document.getElementById("game-canvas");
-    this.menuBackground = new MenuBackground(document.getElementById("menu-letter-rain"));
+    // The menu-family screens (main menu, mode picker, settings, leaderboard) all
+    // share the falling-letter backdrop. Each overlay carries its own rain layer so
+    // the letters stay behind that overlay's panel; hidden overlays are display:none,
+    // so only the visible screen ever animates.
+    this.menuBackgrounds = Array.from(
+      document.querySelectorAll(".menu-letter-rain"),
+      (layer) => new MenuBackground(layer)
+    );
     this.profileManager = new ProfileManager();
     const profile = this.profileManager.profile;
 

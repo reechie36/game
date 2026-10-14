@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Shuffall</title>
-  <link rel="stylesheet" href="css/style.css?v=16">
+  <link rel="stylesheet" href="css/style.css?v=17">
   <link rel="icon" type="image/png" href="assets/letter-s.png">
   <meta name="description" content="Shuffall is a fast-paced word game where you form words from falling letters. Survive as long as you can in Endless mode or race against the clock in Time Attack mode.">
   <meta name="keywords" content="Shuffall, word game, letter game, endless mode, time attack, vocabulary, spelling, puzzle game">
@@ -28,7 +28,7 @@
 
       <!-- Menu Overlay -->
       <div id="menu-overlay" class="overlay">
-        <div id="menu-letter-rain" aria-hidden="true"></div>
+        <div class="menu-letter-rain" aria-hidden="true"></div>
         <div class="overlay-panel">
           <h1 class="title-large home-title">Shuffall</h1>
           <form id="menu-name-form" class="name-form">
@@ -57,6 +57,7 @@
 
       <!-- Mode Picker -->
       <div id="mode-overlay" class="overlay hidden">
+        <div class="menu-letter-rain" aria-hidden="true"></div>
         <div class="overlay-panel mode-panel">
           <h2 class="title-large">CHOOSE MODE</h2>
           <div class="mode-option">
@@ -99,6 +100,7 @@
 
       <!-- Settings Overlay -->
       <div id="settings-overlay" class="overlay hidden">
+        <div class="menu-letter-rain" aria-hidden="true"></div>
         <div class="overlay-panel">
           <h2 class="title-large">SETTINGS</h2>
           <p id="settings-name-display" class="subtitle" style="color: var(--accent-gold);"></p>
@@ -133,6 +135,7 @@
 
       <!-- Leaderboard Overlay -->
       <div id="leaderboard-overlay" class="overlay hidden">
+        <div class="menu-letter-rain" aria-hidden="true"></div>
         <div class="overlay-panel" style="max-width: 680px;">
           <h2 class="title-large" style="font-size: 28px; margin-bottom: 16px;">GLOBAL LEADERBOARD</h2>
           <div class="leaderboard-tabs" role="tablist" aria-label="Leaderboard mode">
@@ -192,6 +195,6 @@
   </div>
 
   <script src="env.js"></script>
-  <script type="module" src="src/main.js?v=14"></script>
+  <script type="module" src="src/main.js?v=15"></script>
 </body>
 </html>
