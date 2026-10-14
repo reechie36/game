@@ -66,6 +66,7 @@ python main.py
 - `assets/`: fonts, sounds, and data files
 - `DEPLOYMENT.md`: deployment guide
 - `PORTING_PROCESS.md`: notes on the project evolution
+- `READINESS.md`: current demo/pitch readiness assessment and punch list
 
 ## Deployment and leaderboard
 
@@ -75,5 +76,5 @@ Optional Supabase leaderboard support can be enabled with environment variables 
 
 ## Notes
 
-This project is a small playable prototype and is designed to be easy to run locally. For more implementation detail, check the docs in [DEPLOYMENT.md](DEPLOYMENT.md) and [PORTING_PROCESS.md](PORTING_PROCESS.md).
+This project is a small playable prototype and is designed to be easy to run locally. For more implementation detail, check the docs in [DEPLOYMENT.md](DEPLOYMENT.md) and [PORTING_PROCESS.md](PORTING_PROCESS.md). For the current state of the game — what is verified, what blocks a public demo link, and the ordered punch list — see [READINESS.md](READINESS.md).
 
