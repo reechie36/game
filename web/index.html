@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Shuffall</title>
-  <link rel="stylesheet" href="css/style.css?v=17">
+  <link rel="stylesheet" href="css/style.css?v=18">
   <link rel="icon" type="image/png" href="assets/letter-s.png">
   <meta name="description" content="Shuffall is a fast-paced word game where you form words from falling letters. Survive as long as you can in Endless mode or race against the clock in Time Attack mode.">
   <meta name="keywords" content="Shuffall, word game, letter game, endless mode, time attack, vocabulary, spelling, puzzle game">
@@ -21,9 +21,11 @@
 
       <!-- In-game Action HUD -->
       <button id="pause-btn-hud" class="pause-btn-hud" style="display: none;">PAUSE (P)</button>
+      <!-- Static control hint. It is pinned to the band of the board below the
+           lowest row (the grid ends at 660/820 of the square), so it can never
+           cover the playfield, and it ignores pointer events. -->
       <div id="action-bar" style="display: none;">
-        <p id="confirm-hint" class="confirm-hint" aria-live="polite">Tap a word twice to confirm</p>
-        <button id="confirm-btn" class="confirm-btn" type="button">SPACE TO CONFIRM</button>
+        <p id="confirm-hint" class="confirm-hint">Tap a word twice or press Space to confirm.</p>
       </div>
 
       <!-- Menu Overlay -->
@@ -195,6 +197,6 @@
   </div>
 
   <script src="env.js"></script>
-  <script type="module" src="src/main.js?v=15"></script>
+  <script type="module" src="src/main.js?v=16"></script>
 </body>
 </html>

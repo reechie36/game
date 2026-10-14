@@ -190,63 +190,45 @@ input {
   cursor: grabbing;
 }
 
-/* Floating on-screen confirm action bar for mobile & desktop */
+/* Single line of control hint, shown while a game is playing.
+   `bottom` is a percentage of the square #game-wrapper (which is exactly the
+   canvas), and the lowest row of the grid ends at BOARD_BOTTOM_Y 660 / 820 =
+   80.5% of that square. Keeping the hint inside the bottom ~19% means it always
+   lands in the empty band under the board instead of over the tiles, whatever
+   the viewport size. */
 #action-bar {
   position: absolute;
-  bottom: 12px;
+  bottom: 7%;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 12px;
   z-index: 20;
-  pointer-events: auto;
-  flex-direction: column;
+  pointer-events: none;
   align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 .confirm-hint {
-  color: var(--text-color);
-  font-size: 13px;
-  line-height: 1.2;
+  color: color-mix(in srgb, var(--text-color) 45%, transparent);
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 1;
+  letter-spacing: 0.02em;
   margin: 0;
-  padding: 7px 12px;
+  padding: 0 12px;
   text-align: center;
-  background: color-mix(in srgb, var(--bg-color) 88%, transparent);
-  border-radius: 6px;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  transition: color 0.15s ease;
 }
 
-.confirm-btn {
-  background: var(--btn-bg);
-  border: 2px solid var(--grid-line);
-  color: var(--text-color);
-  font-family: 'Fira Mono', monospace;
-  font-size: 10px;
-  font-weight: bold;
-  padding: 12px 24px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 7em;
-}
-
-.confirm-btn.active {
-  background: rgb(55, 65, 45);
-  border-color: var(--accent-gold);
+/* A selectable run is under the cursor: nudge the hint up so the player knows
+   Space / double tap will land on it. */
+.confirm-hint.has-candidate {
   color: var(--accent-gold);
-  box-shadow: 0 0 16px rgba(230, 190, 90, 0.4);
-  transform: scale(1.04);
-}
-
-.confirm-btn:active {
-  transform: scale(0.97);
-}
-
-.confirm-btn.hidden {
-  display: none;
 }
 
 .pause-btn-hud {
@@ -594,19 +576,14 @@ input {
 @media (max-width: 600px) {
   #action-bar {
     width: min(94vw, 420px);
-    bottom: max(10px, env(safe-area-inset-bottom));
-    gap: 6px;
+    /* Stay in the band under the grid; the safe-area inset only nudges the hint
+       up on notched phones. */
+    bottom: max(7%, calc(env(safe-area-inset-bottom) + 6px));
   }
 
   .confirm-hint {
-    font-size: 12px;
-  }
-
-  .confirm-btn {
-    width: 100%;
-    min-height: 56px;
-    padding: 14px 16px;
-    font-size: 15px;
+    font-size: 11px;
+    white-space: normal;
   }
 
   .pause-btn-hud {

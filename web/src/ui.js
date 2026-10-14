@@ -24,7 +24,6 @@ export class UIManager {
     this.onResume = options.onResume || (() => {});
     this.onRestart = options.onRestart || (() => {});
     this.onMenu = options.onMenu || (() => {});
-    this.onConfirmSegment = options.onConfirmSegment || (() => {});
     this.onPauseClick = options.onPauseClick || (() => {});
 
     this.cacheElements();
@@ -43,7 +42,6 @@ export class UIManager {
 
     this.actionBar = document.getElementById("action-bar");
     this.confirmHint = document.getElementById("confirm-hint");
-    this.confirmBtn = document.getElementById("confirm-btn");
     this.pauseBtnHud = document.getElementById("pause-btn-hud");
     this.startCountdown = document.getElementById("start-countdown");
 
@@ -152,7 +150,6 @@ export class UIManager {
     this.btnGameoverLeaderboard.addEventListener("click", () => this.onLeaderboard());
     this.btnGameoverMenu.addEventListener("click", () => this.onMenu());
 
-    this.confirmBtn.addEventListener("click", () => this.onConfirmSegment());
     this.pauseBtnHud.addEventListener("click", () => this.onPauseClick());
   }
 
@@ -246,21 +243,16 @@ export class UIManager {
     this.modeTimeBest.textContent = `BEST: ${(personalBests.time_attack ?? 0).toFixed(2)}`;
   }
 
+  /**
+   * The in-game hint is a single static line, so a candidate run only brightens
+   * it. Confirming is a double tap on the run or the Space key, both handled by
+   * InputHandler — there is no on-screen confirm button.
+   */
   setSegmentCandidate(candidate) {
-    if (!candidate || !candidate.word) {
-      this.confirmBtn.textContent = "SPACE TO CONFIRM";
-      this.confirmBtn.setAttribute("aria-label", "Select a word to confirm");
-      this.confirmHint.textContent = "Tap a word twice or click SPACE to confirm";
-      this.confirmBtn.classList.add("hidden");
-      this.confirmBtn.classList.remove("active");
-    } else {
-      const upper = candidate.word.toUpperCase();
-      this.confirmBtn.textContent = `CONFIRM "${upper}"`;
-      this.confirmBtn.setAttribute("aria-label", `Confirm word ${upper}`);
-      this.confirmHint.textContent = `Tap "${upper}" twice, or tap confirm`;
-      this.confirmBtn.classList.remove("hidden");
-      this.confirmBtn.classList.add("active");
-    }
+    this.confirmHint.classList.toggle(
+      "has-candidate",
+      Boolean(candidate && candidate.word)
+    );
   }
 
   setCountdown(seconds) {

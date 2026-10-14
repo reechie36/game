@@ -11,7 +11,7 @@ import { MenuBackground } from "./menu_background.js";
 import { ProfileManager } from "./profile.js";
 import { GAME_MODES } from "./config.js?v=2";
 import { Renderer } from "./render.js?v=5";
-import { UIManager } from "./ui.js?v=7";
+import { UIManager } from "./ui.js?v=8";
 
 class GameApp {
   constructor() {
@@ -70,7 +70,6 @@ class GameApp {
       onResume: () => this.resumeGame(),
       onRestart: () => this.restartGame(),
       onMenu: () => this.switchState("menu"),
-      onConfirmSegment: () => this.inputHandler.confirmCurrentSegment(performance.now()),
       onPauseClick: () => this.togglePause(),
     });
 
