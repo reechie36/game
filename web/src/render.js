@@ -30,22 +30,96 @@ function rgbaStr([r, g, b], a) {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-function cssColorToRgb(value, fallback) {
-  const normalized = value.trim();
-  const rgbMatch = normalized.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
-  if (rgbMatch) return rgbMatch.slice(1).map(Number);
+/**
+ * CSS gradient mirroring the canvas deletion zone. The canvas paints a 2px
+ * stroke centred on the stack line and a falloff that starts at that same
+ * centre, so the CSS layer offsets its stops by half a line thickness.
+ */
+function buildStackZoneGradient(lineHeight, zoneHeight) {
+  const origin = lineHeight / 2;
+  const stops = [
+    `rgba(${STACK_LINE_RGB.join(", ")}, ${STACK_LINE_ALPHA}) 0 ${lineHeight}px`,
+  ];
+  for (const [pos, alpha] of DELETION_ZONE_STOPS) {
+    stops.push(
+      `rgba(${DELETION_ZONE_RGB.join(", ")}, ${alpha}) ${origin + zoneHeight * pos}px`
+    );
+  }
+  return `linear-gradient(to bottom, ${stops.join(", ")})`;
+}
 
-  const hexMatch = normalized.match(/^#([\da-f]{6})$/i);
+function cssColorToRgb(value, fallback) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return fallback;
+
+  const rgbMatch = normalized.match(
+    /^rgba?\(\s*([\d.]+)(?:%?)\s*[,\s]\s*([\d.]+)(?:%?)\s*[,\s]\s*([\d.]+)(?:%?)/i
+  );
+  if (rgbMatch) return rgbMatch.slice(1, 4).map((v) => Math.round(Number(v)));
+
+  const hexMatch = normalized.match(/^#([\da-f]{3}|[\da-f]{6})$/i);
   if (hexMatch) {
+    const hex = hexMatch[1];
+    const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
     return [
-      parseInt(hexMatch[1].slice(0, 2), 16),
-      parseInt(hexMatch[1].slice(2, 4), 16),
-      parseInt(hexMatch[1].slice(4, 6), 16),
+      parseInt(full.slice(0, 2), 16),
+      parseInt(full.slice(2, 4), 16),
+      parseInt(full.slice(4, 6), 16),
     ];
+  }
+
+  // Last resort: let the browser normalise any other CSS color syntax.
+  if (typeof document !== "undefined") {
+    if (!cssColorToRgb.parser) {
+      cssColorToRgb.parser = document.createElement("canvas").getContext("2d");
+    }
+    const parser = cssColorToRgb.parser;
+    parser.fillStyle = "#010203"; // sentinel: unchanged means the value was invalid
+    parser.fillStyle = normalized;
+    const resolved = typeof parser.fillStyle === "string" ? parser.fillStyle : "";
+    if (resolved && resolved !== "#010203") return cssColorToRgb(resolved, fallback);
   }
 
   return fallback;
 }
+
+/* ----------------------------------------------------------------------
+ * Backdrop effects shared between the canvas and the surrounding page.
+ * The renderer publishes these values as CSS custom properties every frame
+ * so the area left/right/above/below the square canvas always matches what
+ * is painted inside it (see #app-container layers in css/style.css).
+ * -------------------------------------------------------------------- */
+const DANGER_TINT_RGB = [150, 35, 35];
+const GRACE_TINT_RGB = [255, 90, 90];
+const STACK_LINE_RGB = [245, 75, 75];
+const STACK_LINE_ALPHA = 0.706;
+const DELETION_ZONE_RGB = [220, 45, 45];
+// [gradient position, alpha] — used by both the canvas and the CSS backdrop.
+const DELETION_ZONE_STOPS = [
+  [0.0, 0.412],
+  [0.25, 0.231],
+  [0.5, 0.103],
+  [0.75, 0.026],
+  [1.0, 0.0],
+];
+const DANGER_TINT_STRENGTH = 16; // max alpha = 16 / 255 at danger level 1
+const GRACE_TINT_BASE = 18;
+const GRACE_TINT_PEAK = 55;
+
+const BACKDROP_VARS = [
+  "--game-bg",
+  "--danger-line-color",
+  "--danger-tint-rgb",
+  "--danger-tint-height",
+  "--danger-overlay-opacity",
+  "--grace-tint-rgb",
+  "--grace-overlay-opacity",
+  "--line-height",
+  "--danger-line-top",
+  "--stack-line-top",
+  "--stack-zone-height",
+  "--stack-zone-gradient",
+];
 
 export class Renderer {
   constructor(canvas) {
@@ -100,19 +174,98 @@ export class Renderer {
     };
   }
 
-  updateViewportEffects(disappearY) {
-    const wrapperRect = this.canvas.getBoundingClientRect();
-    const scale = wrapperRect.height / SCREEN_H;
-    const root = document.documentElement;
-    const toViewportY = (logicalY) => wrapperRect.top + logicalY * scale;
-
-    root.style.setProperty("--stack-line-top", `${toViewportY(disappearY)}px`);
-    root.style.setProperty("--danger-line-top", `${toViewportY(BUFFER_LINE_Y)}px`);
-    root.style.setProperty("--line-height", `${Math.max(1, 2 * scale)}px`);
-    root.style.setProperty(
-      "--stack-zone-height",
-      `${Math.max(2, DELETION_ZONE_HEIGHT * scale)}px`
+  /**
+   * Heartbeat alpha (0..1) for the grace-period pulse at time `now`.
+   */
+  gracePulseAlpha(now) {
+    const beatPeriodMs = 60000 / 80; // 750ms
+    const beatPhase = (now % beatPeriodMs) / beatPeriodMs;
+    const pulse = Math.min(
+      1.0,
+      Math.exp(-Math.pow((beatPhase - 0.12) / 0.055, 2)) +
+        0.55 * Math.exp(-Math.pow((beatPhase - 0.27) / 0.08, 2))
     );
+    return (GRACE_TINT_BASE + pulse * GRACE_TINT_PEAK) / 255;
+  }
+
+  /**
+   * Canvas -> page geometry used to position the backdrop layers. Cached for
+   * a short while because getBoundingClientRect() forces layout.
+   */
+  getBackdropLayout() {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (!this._layout || now - this._layout.at > 250) {
+      const canvasRect = this.canvas.getBoundingClientRect();
+      const containerRect = this.getContainer().getBoundingClientRect();
+      this._layout = {
+        at: now,
+        scale: canvasRect.height > 0 ? canvasRect.height / SCREEN_H : 1,
+        offsetY: canvasRect.top - containerRect.top,
+      };
+    }
+    return this._layout;
+  }
+
+  /**
+   * Publish the canvas' dynamic backdrop state (base color, danger tint,
+   * grace heartbeat, stack/danger lines) as CSS custom properties so the
+   * page around the square canvas mirrors the game screen exactly.
+   */
+  updateViewportEffects({ disappearY, dangerAlpha, graceAlpha, colors }) {
+    const { scale, offsetY } = this.getBackdropLayout();
+
+    // A 2px canvas stroke is centred on its logical Y coordinate, so the
+    // matching CSS layer must start half a line higher to stay seamless.
+    const lineHeight = Math.max(1, 2 * scale);
+    const toContainerY = (logicalY) => offsetY + logicalY * scale;
+    const stackTopPx = toContainerY(disappearY);
+    const zonePx = DELETION_ZONE_HEIGHT * scale;
+
+    const root = document.documentElement;
+    const cache = (this._backdropCache ||= {});
+    const set = (name, value) => {
+      if (cache[name] !== value) {
+        cache[name] = value;
+        root.style.setProperty(name, value);
+      }
+    };
+
+    set("--game-bg", rgbStr(colors.BG));
+    set("--danger-line-color", rgbStr(colors.DANGER_LINE_COLOR));
+    set("--danger-tint-rgb", DANGER_TINT_RGB.join(", "));
+    set("--grace-tint-rgb", GRACE_TINT_RGB.join(", "));
+    set("--danger-overlay-opacity", `${dangerAlpha}`);
+    set("--grace-overlay-opacity", `${graceAlpha}`);
+    set("--line-height", `${lineHeight}px`);
+    set("--danger-line-top", `${toContainerY(BUFFER_LINE_Y) - lineHeight / 2}px`);
+    set("--stack-line-top", `${stackTopPx - lineHeight / 2}px`);
+    set("--stack-zone-height", `${zonePx}px`);
+    // The canvas stops tinting where the deletion zone repaints it, so the
+    // page tint stops at the exact same line (it still covers the letterboxed
+    // strip above the canvas, which is tinted as well).
+    set("--danger-tint-height", `${Math.max(0, stackTopPx)}px`);
+    set("--stack-zone-gradient", buildStackZoneGradient(lineHeight, zonePx));
+  }
+
+  /**
+   * Clear all backdrop overrides (menu, countdown, after a game ends).
+   */
+  resetViewportEffects() {
+    const root = document.documentElement;
+    this._backdropCache = {};
+    this._layout = null;
+    for (const name of BACKDROP_VARS) root.style.removeProperty(name);
+    this.currentDangerLevel = 0;
+  }
+
+  getContainer() {
+    if (!this.containerEl || !this.containerEl.isConnected) {
+      this.containerEl =
+        this.canvas.closest("#app-container") ||
+        this.canvas.parentElement ||
+        document.body;
+    }
+    return this.containerEl;
   }
 
   /**
@@ -149,14 +302,18 @@ export class Renderer {
     ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
     const dangerLevel = board.danger_level();
-    if (dangerLevel > 0) {
-      const dangerAlpha = (16 * dangerLevel) / 255;
-      ctx.fillStyle = `rgba(150, 35, 35, ${dangerAlpha})`;
+    this.currentDangerLevel = dangerLevel;
+    const dangerAlpha = (DANGER_TINT_STRENGTH * dangerLevel) / 255;
+    if (dangerAlpha > 0) {
+      ctx.fillStyle = rgbaStr(DANGER_TINT_RGB, dangerAlpha);
       ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
     }
 
     const disappearY = board.stack_top_y() - 4;
-    this.updateViewportEffects(disappearY);
+    const graceAlpha =
+      board.grace_active && !board.game_over ? this.gracePulseAlpha(now) : 0;
+
+    this.updateViewportEffects({ disappearY, dangerAlpha, graceAlpha, colors });
 
     // 2. Cover area below the gradient
     const underGradientY = disappearY + DELETION_ZONE_HEIGHT;
@@ -195,19 +352,17 @@ export class Renderer {
     ctx.fillStyle = rgbStr(colors.BG);
     ctx.fillRect(0, disappearY, SCREEN_W, DELETION_ZONE_HEIGHT);
 
-    // Gradient with quadratic falloff
+    // Gradient with quadratic falloff (mirrored by the CSS backdrop layer)
     const grad = ctx.createLinearGradient(0, disappearY, 0, disappearY + DELETION_ZONE_HEIGHT);
-    grad.addColorStop(0.0, "rgba(220, 45, 45, 0.412)"); // 105 / 255
-    grad.addColorStop(0.25, "rgba(220, 45, 45, 0.231)");
-    grad.addColorStop(0.5, "rgba(220, 45, 45, 0.103)");
-    grad.addColorStop(0.75, "rgba(220, 45, 45, 0.026)");
-    grad.addColorStop(1.0, "rgba(220, 45, 45, 0.0)");
+    for (const [pos, alpha] of DELETION_ZONE_STOPS) {
+      grad.addColorStop(pos, rgbaStr(DELETION_ZONE_RGB, alpha));
+    }
 
     ctx.fillStyle = grad;
     ctx.fillRect(0, disappearY, SCREEN_W, DELETION_ZONE_HEIGHT);
 
     // 6. Stack disappearance line
-    ctx.strokeStyle = "rgba(245, 75, 75, 0.706)"; // 180 / 255
+    ctx.strokeStyle = rgbaStr(STACK_LINE_RGB, STACK_LINE_ALPHA);
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, disappearY);
@@ -311,16 +466,8 @@ export class Renderer {
     }
 
     // 9. Grace period overlay heartbeat pulse
-    if (board.grace_active && !board.game_over) {
-      const beatPeriodMs = 60000 / 80; // 750ms
-      const beatPhase = (now % beatPeriodMs) / beatPeriodMs;
-      const pulse = Math.min(
-        1.0,
-        Math.exp(-Math.pow((beatPhase - 0.12) / 0.055, 2)) +
-          0.55 * Math.exp(-Math.pow((beatPhase - 0.27) / 0.08, 2))
-      );
-      const graceAlpha = (18 + pulse * 55) / 255;
-      ctx.fillStyle = `rgba(255, 90, 90, ${graceAlpha})`;
+    if (graceAlpha > 0) {
+      ctx.fillStyle = rgbaStr(GRACE_TINT_RGB, graceAlpha);
       ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
     }
 

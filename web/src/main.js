@@ -10,8 +10,8 @@ import { LeaderboardClient } from "./leaderboard.js?v=3";
 import { MenuBackground } from "./menu_background.js";
 import { ProfileManager } from "./profile.js";
 import { GAME_MODES } from "./config.js?v=2";
-import { Renderer } from "./render.js?v=4";
-import { UIManager } from "./ui.js?v=6";
+import { Renderer } from "./render.js?v=5";
+import { UIManager } from "./ui.js?v=7";
 
 class GameApp {
   constructor() {
@@ -130,6 +130,7 @@ class GameApp {
       this.inputHandler.setBoard(this.board);
       this.submitted = false;
       this.isNewBest = false;
+      this.renderer.resetViewportEffects();
       this.renderer.clear();
     }
 

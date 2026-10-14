@@ -6,6 +6,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Sigmar';
+  src: url('../assets/Sigmar-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg-color: rgb(18, 18, 24);
   --text-color: rgb(235, 235, 240);
@@ -16,6 +24,33 @@
   --danger-color: rgb(220, 90, 90);
   --btn-bg: rgb(45, 45, 58);
   --btn-bg-hover: rgb(72, 72, 86);
+
+  /*
+   * Backdrop layers mirrored from the canvas renderer (see render.js ->
+   * updateViewportEffects). These keep the area around the square game
+   * canvas perfectly in sync with what is painted inside it.
+   * They are overwritten inline every frame while a game is visible.
+   */
+  --game-bg: var(--bg-color);
+  --danger-line-color: var(--danger-color);
+  --danger-tint-rgb: 150, 35, 35;
+  --danger-tint-height: 0px;
+  --danger-overlay-opacity: 0;
+  --grace-tint-rgb: 255, 90, 90;
+  --grace-overlay-opacity: 0;
+  --line-height: 2px;
+  --danger-line-top: -9999px;
+  --stack-line-top: -9999px;
+  --stack-zone-height: 128px;
+  --stack-zone-gradient: linear-gradient(
+    to bottom,
+    rgba(245, 75, 75, 0.706) 0 2px,
+    rgba(220, 45, 45, 0.412) 1px,
+    rgba(220, 45, 45, 0.231) 33px,
+    rgba(220, 45, 45, 0.103) 65px,
+    rgba(220, 45, 45, 0.026) 97px,
+    rgba(220, 45, 45, 0) 129px
+  );
 }
 
 :root[data-theme="gruvbox-dark"] {
@@ -55,7 +90,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: var(--bg-color);
+  background-color: var(--game-bg);
   color: var(--text-color);
   font-family: 'Fira Mono', monospace;
   touch-action: none;
@@ -73,7 +108,30 @@ input {
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: var(--bg-color);
+  background-color: var(--game-bg);
+}
+
+/* Ambient danger tint — stops where the canvas stops tinting (deletion zone). */
+#app-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--danger-tint-height, 0px);
+  pointer-events: none;
+  background: rgba(var(--danger-tint-rgb), var(--danger-overlay-opacity, 0));
+  z-index: 0;
+}
+
+/* Grace-period heartbeat pulse — covers the whole backdrop, like the canvas. */
+#app-container::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(var(--grace-tint-rgb), var(--grace-overlay-opacity, 0));
+  z-index: 0;
 }
 
 #stack-line-bg,
@@ -87,37 +145,32 @@ input {
 }
 
 #stack-line-bg {
-  top: var(--stack-line-top, 0px);
-  height: var(--stack-zone-height, 2px);
-  background: linear-gradient(
-    to bottom,
-    rgba(245, 75, 75, 0.706) 0 2px,
-    rgba(220, 45, 45, 0.412) 2px,
-    rgba(220, 45, 45, 0.231) 25%,
-    rgba(220, 45, 45, 0.103) 50%,
-    rgba(220, 45, 45, 0.026) 75%,
-    transparent 100%
-  );
+  top: var(--stack-line-top, -9999px);
+  height: calc(var(--stack-zone-height, 128px) + var(--line-height, 2px) / 2);
+  /* Solid base reproduces the canvas' opaque fill under the gradient so the
+     ambient tint never bleeds through the deletion zone. */
+  background-color: var(--game-bg);
+  background-image: var(--stack-zone-gradient);
 }
 
 #danger-line-bg {
-  top: var(--danger-line-top, 0px);
-  background: rgb(200, 60, 60);
+  top: var(--danger-line-top, -9999px);
+  background: var(--danger-line-color, rgb(200, 60, 60));
   z-index: 0;
 }
 
-#app-container.menu-state #stack-line-bg,
-#app-container.menu-state #danger-line-bg {
+/* Backdrop effects are only meaningful while the board is on screen. */
+#app-container:not(.board-visible)::before,
+#app-container:not(.board-visible)::after,
+#app-container:not(.board-visible) #stack-line-bg,
+#app-container:not(.board-visible) #danger-line-bg {
   display: none;
 }
 
 #game-wrapper {
   position: relative;
-  top: 22px;
-  width: 820px;
-  height: 900px;
-  max-width: 100vw;
-  max-height: 150vh;
+  width: min(820px, 100vw, 100vh);
+  height: auto;
   aspect-ratio: 1 / 1;
   display: flex;
   justify-content: center;
@@ -323,6 +376,11 @@ input {
   margin-bottom: 24px;
   letter-spacing: 2px;
   text-align: center;
+}
+
+.home-title {
+  font-family: 'Sigmar', sans-serif;
+  font-weight: normal;
 }
 
 .subtitle {

@@ -4,12 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Shuffall</title>
-  <link rel="stylesheet" href="css/style.css?v=14">
+  <link rel="stylesheet" href="css/style.css?v=15">
+  <link rel="icon" type="image/png" href="assets/letter-s.png">
+  <meta name="description" content="Shuffall is a fast-paced word game where you form words from falling letters. Survive as long as you can in Endless mode or race against the clock in Time Attack mode.">
+  <meta name="keywords" content="Shuffall, word game, letter game, endless mode, time attack, vocabulary, spelling, puzzle game">
 </head>
 <body>
   <div id="app-container">
-    <div id="stack-line-bg" aria-hidden="true"></div>
+    <!-- Painted in canvas order: the danger line first, then the deletion
+         zone, which repaints over it when the stack grows past the buffer. -->
     <div id="danger-line-bg" aria-hidden="true"></div>
+    <div id="stack-line-bg" aria-hidden="true"></div>
     <div id="game-wrapper">
       <canvas id="game-canvas" aria-label="Letter Rise game board"></canvas>
       <div id="start-countdown" class="start-countdown hidden" aria-live="assertive"></div>
@@ -25,7 +30,7 @@
       <div id="menu-overlay" class="overlay">
         <div id="menu-letter-rain" aria-hidden="true"></div>
         <div class="overlay-panel">
-          <h1 class="title-large">Shuffall</h1>
+          <h1 class="title-large home-title">Shuffall</h1>
           <form id="menu-name-form" class="name-form">
             <div class="menu-name-row">
               <input
@@ -187,6 +192,6 @@
   </div>
 
   <script src="env.js"></script>
-  <script type="module" src="src/main.js?v=13"></script>
+  <script type="module" src="src/main.js?v=14"></script>
 </body>
 </html>

@@ -158,6 +158,12 @@ export class UIManager {
 
   showState(state) {
     this.appContainer?.classList.toggle("menu-state", state === "menu");
+    // The backdrop layers (danger tint, grace pulse, stack/danger lines)
+    // mirror the canvas, so they are only shown while the board is on screen.
+    this.appContainer?.classList.toggle(
+      "board-visible",
+      state === "playing" || state === "paused" || state === "game_over"
+    );
     const overlays = [
       this.menuOverlay,
       this.modeOverlay,
