@@ -1,5 +1,5 @@
 /**
- * Main game entry point, loop, and state machine for Letter Rise Web.
+ * Main game entry point, loop, and state machine for Shuffall Web.
  */
 
 import { AudioEngine } from "./audio.js";
